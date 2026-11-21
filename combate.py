@@ -26,6 +26,11 @@ from proyectiles import (
     DarkGravityVortexBullet,
     LaserCrossGridBullet,
     FracturedMirrorShards,
+    ErraticChaosCardBullet,
+    CyberNeonGlitchBullet,
+    TutorialDodgeWaveBullet,
+    TutorialParryOrbBullet,
+    TutorialDashWallBullet,
 )
 
 # ==========================================================
@@ -82,6 +87,12 @@ class DeltaruneBattle:
             "quotes": self.template["quotes"],
             "patterns": self.template["patterns"],
         }
+        self.is_tutorial_dummy = bool(self.template.get("is_tutorial_dummy", False))
+        self.tutorial_goal_count = 0
+        self.tutorial_goal_target = 4
+        self.tutorial_goal_completed = False
+        self.tutorial_wave_side = True
+        self.tutorial_dash_window = 0.0
         self.sound_fx = sound_fx
         self.font_hud = font_hud
         self.font_dialogue = font_dialogue
@@ -95,7 +106,7 @@ class DeltaruneBattle:
         self.tp = 0.0
         self.display_tp = 0.0
 
-        # Estado y efectos visuales de la habilidad mágica BlackFlash (50% TP, 15% prob, +20% daño, 2 golpes)
+        # Estado y efectos visuales de la habilidad mágica BlackFlash (50% TP, retícula estilo Clover de Undertale Yellow)
         self.black_flash_chance = 0.15
         self.black_flash_casts = 0
         self.black_flash_state = None
@@ -103,6 +114,15 @@ class DeltaruneBattle:
         self.black_flash_bolts = []
         self.crystal_cracks = []
         self.crystal_shards = []
+
+        # Retícula de concentración estilo Clover (Undertale Yellow) para BlackFlash
+        self.bf_aim_active = False
+        self.bf_ring_radius = 56.0
+        self.bf_target_radius = 13.0
+        self.bf_shrink_speed = 58.0
+        self.bf_ring_trails = []
+        self.bf_precision_tier = "PERFECT"
+        self.last_attack_was_bf = False
 
         # Botones de acción principales de Deltarune
         self.btn_names = ["FIGHT", "ACT", "ITEM", "SPARE", "DEFEND"]
@@ -160,6 +180,14 @@ class DeltaruneBattle:
         self.parry_floating_pos = [0.0, 0.0]
         self.parry_floating_life = 0.0
 
+        # Sistema de Dash del Corazón con tecla [X] durante el turno enemigo
+        self.soul_dash_timer = 0.0
+        self.soul_dash_cooldown = 0.0
+        self.soul_dash_dir = [1.0, 0.0]
+        self.soul_last_dir = [1.0, 0.0]
+        self.soul_dash_speed = 340.0
+        self.soul_dash_afterimages = []
+
         # Barra de Ataque interactiva estilo Deltarune (dentro de default_box)
         self.meter_rect = pygame.Rect(36, 186, 328, 48)
         self.target_x = self.meter_rect.left + 44
@@ -182,9 +210,9 @@ class DeltaruneBattle:
         self.speech_bubble_text = ""
         self.speech_bubble_timer = 0.0
 
-        # Temporizador y balas del turno enemigo (más largo e intenso al subir de nivel)
+        # Temporizador y balas del turno enemigo (más largo e intenso al subir de nivel; 7.8s en el tutorial para practicar bien)
         self.turn_timer = 0.0
-        self.turn_duration = 5.4 + min(2.2, self.lv_bonus * 0.18)
+        self.turn_duration = 7.8 if self.is_tutorial_dummy else (5.4 + min(2.2, self.lv_bonus * 0.18))
         self.bullets = []
         self.bullet_spawn_timer = 0.0
         self.turn_prep_timer = 0.0
@@ -325,63 +353,121 @@ class DeltaruneBattle:
                 "life": random.uniform(0.55, 0.95),
             })
 
-    def _trigger_black_flash(self, from_crit=False):
-        """Ejecuta la habilidad mágica BlackFlash:
-        - Cuesta 50 TP
-        - 15% de probabilidad de acertar (garantizado en el primer uso de la batalla para demostración inmediata)
-        - Cada golpe es 20% más fuerte que un ataque normal (x1.20)
-        - Impacta DOS VECES (2 golpes consecutivos) rompiendo un cristal con Fuego Oscuro de borde negro.
+    def _start_black_flash_aim(self):
+        """Inicia la retícula circular de concentración estilo Clover (Undertale Yellow) para BlackFlash."""
+        self.state = "BLACK_FLASH_AIM"
+        self.bf_aim_active = True
+        self.last_attack_was_bf = True
+        self.bf_ring_radius = 56.0
+        self.bf_target_radius = 13.0
+        self.bf_shrink_speed = 56.0 + min(18.0, self.lv_bonus * 1.5)
+        self.bf_ring_trails = []
+        self.bf_precision_tier = ""
+        self.attack_rating = ""
+        self.sound_fx.play_select()
+
+    def _resolve_black_flash_aim(self, timed_out=False):
+        """Evalúa la precisión del jugador en la diana estilo Clover de Undertale Yellow."""
+        self.bf_aim_active = False
+        diff = abs(self.bf_ring_radius - self.bf_target_radius)
+        if timed_out:
+            tier = "MISS"
+        elif diff <= 6.0:
+            tier = "PERFECT"
+        elif diff <= 16.0:
+            tier = "IMPERFECT"
+        else:
+            tier = "MISS"
+        self.bf_precision_tier = tier
+        self._trigger_black_flash(precision_tier=tier)
+
+    def _apply_enemy_damage(self, dmg):
+        """Reduce el HP del enemigo; los entrenadores del tutorial no pueden morir (mínimo 1 HP)."""
+        min_hp = 1 if self.is_tutorial_dummy else 0
+        self.enemy["hp"] = max(min_hp, self.enemy["hp"] - dmg)
+
+    def _trigger_black_flash(self, from_crit=False, precision_tier="PERFECT"):
+        """Ejecuta la habilidad mágica BlackFlash según la precisión lograda en la retícula estilo Clover:
+        - 'PERFECT': ¡BlackFlash Perfecto! Impacta DOS VECES con +20% de daño sobre el crítico y rompe el cristal con Fuego Oscuro.
+        - 'IMPERFECT': BlackFlash Incompleto (concentración imprecisa, daño reducido al 65%).
+        - 'MISS': Concentración fallida (el destello se descontrola y solo hace un roce débil).
         """
+        if from_crit:
+            precision_tier = "PERFECT"
+            self.last_attack_was_bf = False
+        self.bf_precision_tier = precision_tier
+
         ex, ey = int(self.enemy_base_x), int(self.enemy_base_y)
         self.black_flash_flames.clear()
         self.crystal_shards.clear()
-        self._spawn_black_flash_vfx(ex, ey, shatter_burst=False)
-
-        # Probabilidad del 15% (0.15) en acertar la habilidad (1er intento de la batalla acierta para poder verla de inmediato)
-        landed = from_crit or (self.black_flash_casts == 0) or (random.random() < self.black_flash_chance)
+        self._spawn_black_flash_vfx(ex, ey, shatter_burst=(precision_tier == "PERFECT"))
         self.black_flash_casts += 1
 
         # Daño base de un ataque normal completo (mult 1.55) aumentado en un +20% (x1.20)
         normal_atk_dmg = max(6, (self.player.effective_attack * 1.55) - self.enemy["defense"])
-        hit_dmg_1 = max(8, int(round(normal_atk_dmg * 1.20 + random.uniform(0.0, 1.5))))
-        hit_dmg_2 = max(8, int(round(normal_atk_dmg * 1.20 + random.uniform(0.5, 2.5))))
+        full_hit_1 = max(8, int(round(normal_atk_dmg * 1.20 + random.uniform(0.0, 1.5))))
+        full_hit_2 = max(8, int(round(normal_atk_dmg * 1.20 + random.uniform(0.5, 2.5))))
 
         self.hero_lunge_x = 32.0
         self.rude_buster_beam = None
 
-        if landed:
+        if precision_tier == "PERFECT":
             self.sound_fx.play_crit()
             self.sound_fx.play_slash()
-            # Primer impacto inmediato
-            self.enemy["hp"] = max(0, self.enemy["hp"] - hit_dmg_1)
+            self._apply_enemy_damage(full_hit_1)
             self.enemy_hit_flash = 0.95
-            self.screen_shake = 8.5
+            self.screen_shake = 9.0
             self.slash_timer = 1.15
             self.black_flash_state = {
                 "landed": True,
-                "hit1_dmg": hit_dmg_1,
-                "hit2_dmg": hit_dmg_2,
+                "perfect": True,
+                "hit1_dmg": full_hit_1,
+                "hit2_dmg": full_hit_2,
                 "hit2_done": False,
             }
-            self.attack_rating = f"¡¡BLACK FLASH x2!! ({hit_dmg_1}+{hit_dmg_2})"
-            self.floating_dmg = f"¡IMPACTO 1! {hit_dmg_1}"
+            self.attack_rating = f"¡¡BLACK FLASH PERFECTO!! ({full_hit_1}+{full_hit_2})"
+            self.floating_dmg = f"¡PERFECTO! {full_hit_1}"
             self.floating_dmg_color = (255, 45, 95)
             self.floating_dmg_pos = [float(self.enemy_base_x), float(self.enemy_base_y - 28)]
             self.floating_dmg_vy = -78.0
+        elif precision_tier == "IMPERFECT":
+            imp_hit_1 = max(4, int(round(full_hit_1 * 0.65)))
+            imp_hit_2 = max(4, int(round(full_hit_2 * 0.65)))
+            self.sound_fx.play_enemy_hit()
+            self.sound_fx.play_slash()
+            self._apply_enemy_damage(imp_hit_1)
+            self.enemy_hit_flash = 0.65
+            self.screen_shake = 5.5
+            self.slash_timer = 1.05
+            self.black_flash_state = {
+                "landed": True,
+                "perfect": False,
+                "hit1_dmg": imp_hit_1,
+                "hit2_dmg": imp_hit_2,
+                "hit2_done": False,
+            }
+            self.attack_rating = f"¡IMPERFECTO! ({imp_hit_1}+{imp_hit_2})"
+            self.floating_dmg = f"IMPERFECTO {imp_hit_1}"
+            self.floating_dmg_color = (255, 175, 80)
+            self.floating_dmg_pos = [float(self.enemy_base_x), float(self.enemy_base_y - 26)]
+            self.floating_dmg_vy = -70.0
         else:
-            # Si falla el 15%, aún muestra los destellos de fuego oscuro y cristal agrietado
+            weak_dmg = max(2, int(round(full_hit_1 * 0.30)))
             self.sound_fx.play_shatter()
-            self.screen_shake = 5.0
+            self._apply_enemy_damage(weak_dmg)
+            self.enemy_hit_flash = 0.35
+            self.screen_shake = 4.0
             self.slash_timer = 0.75
             self.black_flash_state = {
                 "landed": False,
-                "hit1_dmg": 0,
+                "perfect": False,
+                "hit1_dmg": weak_dmg,
                 "hit2_dmg": 0,
                 "hit2_done": True,
             }
-            self.attack_rating = "BLACK FLASH FALLÓ (15% PROB.)"
-            self.floating_dmg = "FALLO (15%)"
-            self.floating_dmg_color = (195, 140, 220)
+            self.attack_rating = f"¡SIN PRECISIÓN! ({weak_dmg})"
+            self.floating_dmg = f"ROCE {weak_dmg}"
+            self.floating_dmg_color = (185, 145, 215)
             self.floating_dmg_pos = [float(self.enemy_base_x), float(self.enemy_base_y - 26)]
             self.floating_dmg_vy = -65.0
 
@@ -431,15 +517,16 @@ class DeltaruneBattle:
 
                 act_type = act.get("type", "NORMAL")
                 if act_type == "TP_BLACK_FLASH":
-                    self._trigger_black_flash(from_crit=False)
+                    self._start_black_flash_aim()
                     return
 
                 elif act_type == "TP_ATTACK":
+                    self.last_attack_was_bf = False
                     self.black_flash_state = None
                     self.sound_fx.play_crit()
                     self.sound_fx.play_slash()
                     dmg = max(12, int(self.player.effective_attack * 2.2 - self.enemy["defense"]))
-                    self.enemy["hp"] = max(0, self.enemy["hp"] - dmg)
+                    self._apply_enemy_damage(dmg)
                     self.enemy_hit_flash = 0.55
                     self.slash_timer = 0.65
                     self.hero_lunge_x = 26.0
@@ -465,19 +552,26 @@ class DeltaruneBattle:
 
                 elif act_type == "TP_PACIFY":
                     self.sound_fx.play_spare()
-                    self.enemy["mercy"] = min(100, self.enemy["mercy"] + act["mercy"])
-                    self.floating_dmg = f"+{act['mercy']}% MERCY"
-                    self.floating_dmg_color = (255, 235, 70)
-                    self.floating_dmg_pos = [float(self.enemy_base_x), float(self.enemy_base_y - 25)]
-                    self.floating_dmg_vy = -55.0
-                    self.action_message = (
-                        f"* ¡Paniel lanzó el hechizo PACIFICAR sobre {self.enemy['name']}!\n"
-                        f"* ¡El espíritu del enemigo se serenó (+{act['mercy']}% Piedad)!"
-                    )
+                    if self.is_tutorial_dummy:
+                        self.enemy["mercy"] = min(100, int((self.tutorial_goal_count / self.tutorial_goal_target) * 100))
+                        self.action_message = (
+                            f"* ¡{self.enemy['name']} es inmune a Pacificar durante el examen!\n"
+                            f"* ¡Debes superar su prueba en su turno ({self.tutorial_goal_count}/{self.tutorial_goal_target}) para poder usar SPARE!"
+                        )
+                    else:
+                        self.enemy["mercy"] = min(100, self.enemy["mercy"] + act["mercy"])
+                        self.floating_dmg = f"+{act['mercy']}% MERCY"
+                        self.floating_dmg_color = (255, 235, 70)
+                        self.floating_dmg_pos = [float(self.enemy_base_x), float(self.enemy_base_y - 25)]
+                        self.floating_dmg_vy = -55.0
+                        self.action_message = (
+                            f"* ¡Paniel lanzó el hechizo PACIFICAR sobre {self.enemy['name']}!\n"
+                            f"* ¡El espíritu del enemigo se serenó (+{act['mercy']}% Piedad)!"
+                        )
                     self.state = "ACTION_TEXT"
                     return
 
-                if act["mercy"] > 0:
+                if act["mercy"] > 0 and not self.is_tutorial_dummy:
                     self.enemy["mercy"] = min(100, self.enemy["mercy"] + act["mercy"])
                     self.sound_fx.play_spare()
                     self.floating_dmg = f"+{act['mercy']}% MERCY"
@@ -487,6 +581,8 @@ class DeltaruneBattle:
                 else:
                     self.sound_fx.play_select()
                 self.action_message = act["text"]
+                if self.is_tutorial_dummy and not self.tutorial_goal_completed:
+                    self.action_message += f"\n* (Progreso actual de la prueba: {self.tutorial_goal_count}/{self.tutorial_goal_target} — {self.enemy['mercy']}% MERCY)"
                 self.state = "ACTION_TEXT"
             elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
                 self.state = "MENU"
@@ -503,6 +599,21 @@ class DeltaruneBattle:
                 self.submenu_idx = (self.submenu_idx + 1) % len(items)
                 self.sound_fx.play_select()
             elif event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
+                item = items[self.submenu_idx]
+                if item.get("atk_bonus") or item.get("def_bonus"):
+                    if not getattr(self.player, "sturdy_arm_equipped", False):
+                        self.player.sturdy_arm_equipped = True
+                        self.player.attack += item.get("atk_bonus", 0)
+                        self.player.defense += item.get("def_bonus", 0)
+                        self.player.weapon = item["name"]
+                        self.player.armor = f"{item['name']} (+10 DEF)"
+                    self.sound_fx.play_heal()
+                    self.action_message = (
+                        f"* ¡Paniel equipó {item['name']}!\n"
+                        f"* \"{item.get('desc', '')}\""
+                    )
+                    self.state = "ACTION_TEXT"
+                    return
                 item = items.pop(self.submenu_idx)
                 heal = item.get("heal", 0)
                 san_heal = item.get("sanity_heal", 0)
@@ -523,11 +634,15 @@ class DeltaruneBattle:
             if event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE] and not self.attack_hit:
                 self._resolve_player_attack()
 
+        elif self.state == "BLACK_FLASH_AIM":
+            if event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE] and self.bf_aim_active:
+                self._resolve_black_flash_aim(timed_out=False)
+
         elif self.state == "ACTION_TEXT":
             if event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
-                if self.enemy["hp"] <= 0:
+                if self.enemy["hp"] <= 0 and not self.is_tutorial_dummy:
                     self._trigger_victory(spared=False)
-                elif self.enemy["mercy"] >= 100 and self.selected_btn == 3:
+                elif self.enemy["mercy"] >= 100 and self.selected_btn == 3 and (not self.is_tutorial_dummy or self.tutorial_goal_completed):
                     self._trigger_victory(spared=True)
                 else:
                     self._start_enemy_turn()
@@ -539,40 +654,91 @@ class DeltaruneBattle:
         elif self.state == "ENEMY_TURN":
             if event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
                 self._trigger_parry()
+            elif event.key == pygame.K_x:
+                self._trigger_soul_dash()
 
         elif self.state == "GAME_OVER":
             if event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE] and self.game_over_timer > 1.2:
                 self.player.hp = self.player.max_hp
                 self.on_finish_callback(victory=False, revived=True)
 
+    def _trigger_soul_dash(self):
+        """Ejecuta un Dash rápido con el corazón al presionar [X] durante el turno enemigo."""
+        if self.soul_dash_cooldown > 0 or self.soul_dash_timer > 0:
+            return
+        keys = pygame.key.get_pressed()
+        dx, dy = 0.0, 0.0
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+            dx -= 1.0
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            dx += 1.0
+        if keys[pygame.K_UP] or keys[pygame.K_w]:
+            dy -= 1.0
+        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+            dy += 1.0
+
+        if dx != 0 or dy != 0:
+            mag = math.hypot(dx, dy)
+            self.soul_dash_dir = [dx / mag, dy / mag]
+            self.soul_last_dir = list(self.soul_dash_dir)
+        else:
+            self.soul_dash_dir = list(self.soul_last_dir)
+
+        self.soul_dash_timer = 0.16 if self.template_id == "maniqui_dash" else 0.14
+        self.soul_dash_cooldown = 0.55 if self.template_id == "maniqui_dash" else 0.65
+        self.tutorial_dash_window = 0.30
+        self.invulnerable_timer = max(self.invulnerable_timer, 0.28 if self.template_id == "maniqui_dash" else 0.16)
+        self.sound_fx.play_move()
+
+        for _ in range(8):
+            ang = random.uniform(0, math.pi * 2)
+            spd = random.uniform(35, 90)
+            self.graze_sparks.append({
+                "x": self.soul_x,
+                "y": self.soul_y,
+                "vx": math.cos(ang) * spd - self.soul_dash_dir[0] * 50.0,
+                "vy": math.sin(ang) * spd - self.soul_dash_dir[1] * 50.0,
+                "life": 0.22,
+            })
+
+    def _advance_tutorial_progress(self, label_prefix):
+        """Incrementa en +1 el progreso real de la prueba del Instructor (meta: 4/4 = 100% MERCY)."""
+        if not self.is_tutorial_dummy:
+            return
+        self.tutorial_goal_count = min(self.tutorial_goal_target, self.tutorial_goal_count + 1)
+        self.enemy["mercy"] = min(100, int(round((self.tutorial_goal_count / self.tutorial_goal_target) * 100)))
+        if self.tutorial_goal_count >= self.tutorial_goal_target:
+            self.tutorial_goal_completed = True
+            self.enemy["mercy"] = 100
+            self.parry_floating_txt = f"¡¡{label_prefix} 4/4 (100% MERCY)!!"
+        else:
+            self.parry_floating_txt = f"¡{label_prefix} ({self.tutorial_goal_count}/{self.tutorial_goal_target})!"
+        self.parry_floating_pos = [float(self.soul_x), float(self.soul_y - 14)]
+        self.parry_floating_life = 0.95
+
     def _trigger_parry(self):
         """Activa el bloqueo / Parry con el Alma Verde durante el turno enemigo.
-        Dura 0.32 segundos. Requiere que el cooldown de 5 segundos haya finalizado."""
+        Dura 0.32 segundos. Requiere que el cooldown de 5 segundos haya finalizado (1.0s contra Instructor de Parry)."""
         if self.parry_cooldown > 0 or self.parry_active_timer > 0:
             return
-        self.parry_active_timer = 0.32
-        self.parry_cooldown = 5.0
+        self.parry_active_timer = 0.38 if self.template_id == "maniqui_parry" else 0.32
+        self.parry_cooldown = 1.0 if self.template_id == "maniqui_parry" else 5.0
         self.sound_fx.play_parry_ready()
 
     def _execute_parry(self, bullet):
-        """Ejecuta con éxito un Parry al desviar un proyectil enemigo durante la ventana activa:
-        - Destruye/anula el proyectil
-        - Emite sonido metálico triunfal de parry (snd_parry)
-        - Crea estallido de chispas verdes/esmeralda
-        - Otorga +16% TP
-        - Muestra texto flotante '+PARRY! (+16% TP)'
-        - Otorga 0.30s de invulnerabilidad para seguridad
-        - Añade sacudida de pantalla épica
-        """
+        """Ejecuta con éxito un Parry al desviar un proyectil enemigo durante la ventana activa."""
         bullet.alive = False
         self.sound_fx.play_parry()
         self.screen_shake = max(self.screen_shake, 4.5)
         self.invulnerable_timer = max(self.invulnerable_timer, 0.30)
         self.tp = min(100.0, self.tp + 16.0)
 
-        self.parry_floating_txt = "+PARRY! (+16% TP)"
-        self.parry_floating_pos = [float(self.soul_x), float(self.soul_y - 14)]
-        self.parry_floating_life = 0.85
+        if self.template_id == "maniqui_parry":
+            self._advance_tutorial_progress("PARRY [Z]")
+        else:
+            self.parry_floating_txt = "+PARRY! (+16% TP)"
+            self.parry_floating_pos = [float(self.soul_x), float(self.soul_y - 14)]
+            self.parry_floating_life = 0.85
 
         for _ in range(16):
             ang = random.uniform(0, math.pi * 2)
@@ -633,6 +799,7 @@ class DeltaruneBattle:
         btn = self.btn_names[self.selected_btn]
         if btn == "FIGHT":
             self.state = "ATTACK_METER"
+            self.last_attack_was_bf = False
             self.cursor_x = float(self.meter_rect.right - 12)
             self.attack_hit = False
             self.attack_rating = ""
@@ -654,19 +821,31 @@ class DeltaruneBattle:
                 self.state = "ACTION_TEXT"
 
         elif btn == "SPARE":
-            if self.enemy["mercy"] >= 100:
+            if self.enemy["mercy"] >= 100 and (not self.is_tutorial_dummy or self.tutorial_goal_completed):
                 self._trigger_victory(spared=True)
             else:
                 self.sound_fx.play_select()
-                self.enemy["mercy"] = min(100, self.enemy["mercy"] + 10)
-                self.floating_dmg = "+10% MERCY"
-                self.floating_dmg_color = (255, 235, 70)
-                self.floating_dmg_pos = [float(self.enemy_base_x), float(self.enemy_base_y - 25)]
-                self.floating_dmg_vy = -50.0
-                self.action_message = (
-                    f"* Intentaste perdonar a {self.enemy['name']}...\n"
-                    "* Pero su nombre aún no es amarillo (+10% Piedad)."
-                )
+                if self.is_tutorial_dummy:
+                    self.enemy["mercy"] = min(100, int(round((self.tutorial_goal_count / self.tutorial_goal_target) * 100)))
+                    req_txt = {
+                        "maniqui_esquiva": f"ESQUIVAR 4 barreras por el hueco verde ({self.tutorial_goal_count}/{self.tutorial_goal_target})",
+                        "maniqui_parry": f"hacer 4 PARRYS con [Z] a sus esferas verdes ({self.tutorial_goal_count}/{self.tutorial_goal_target})",
+                        "maniqui_dash": f"ATRAVESAR 4 muros dorados con DASH [X] ({self.tutorial_goal_count}/{self.tutorial_goal_target})",
+                    }.get(self.template_id, "completar su prueba")
+                    self.action_message = (
+                        f"* ¡SPARE BLOQUEADO! Aún no has completado el entrenamiento de {self.enemy['name']}.\n"
+                        f"* ¡Debes {req_txt} en su turno para llegar a 100% MERCY!"
+                    )
+                else:
+                    self.enemy["mercy"] = min(100, self.enemy["mercy"] + 10)
+                    self.floating_dmg = "+10% MERCY"
+                    self.floating_dmg_color = (255, 235, 70)
+                    self.floating_dmg_pos = [float(self.enemy_base_x), float(self.enemy_base_y - 25)]
+                    self.floating_dmg_vy = -50.0
+                    self.action_message = (
+                        f"* Intentaste perdonar a {self.enemy['name']}...\n"
+                        "* Pero su nombre aún no es amarillo (+10% Piedad)."
+                    )
                 self.state = "ACTION_TEXT"
 
         elif btn == "DEFEND":
@@ -712,7 +891,7 @@ class DeltaruneBattle:
         if mult > 0:
             base_dmg = (self.player.effective_attack * mult) - self.enemy["defense"]
             dmg = max(1, int(round(base_dmg + random.uniform(0.5, 2.5))))
-            self.enemy["hp"] = max(0, self.enemy["hp"] - dmg)
+            self._apply_enemy_damage(dmg)
             self.sound_fx.play_slash()
 
         self.hero_lunge_x = 24.0
@@ -745,6 +924,8 @@ class DeltaruneBattle:
         self.soul_y = float(self.bullet_box.centery)
         self.invulnerable_timer = 0.85  # Escudo de gracia al iniciar el turno para evitar daño instantáneo
         self.parry_active_timer = 0.0
+        self.soul_dash_timer = 0.0
+        self.soul_dash_afterimages.clear()
 
         self.speech_bubble_text = random.choice(self.enemy["quotes"])
         self.speech_bubble_timer = 1.45
@@ -858,6 +1039,16 @@ class DeltaruneBattle:
                 if self.cursor_x <= self.meter_rect.left + 8:
                     self._resolve_player_attack()
 
+        elif self.state == "BLACK_FLASH_AIM":
+            if self.bf_aim_active:
+                self.bf_ring_trails.append({"r": self.bf_ring_radius, "alpha": 150.0})
+                for tr in self.bf_ring_trails:
+                    tr["alpha"] -= dt * 480.0
+                self.bf_ring_trails = [tr for tr in self.bf_ring_trails if tr["alpha"] > 15.0]
+                self.bf_ring_radius -= self.bf_shrink_speed * dt
+                if self.bf_ring_radius <= 2.5:
+                    self._resolve_black_flash_aim(timed_out=True)
+
         elif self.state == "SLASH_ANIM":
             self.slash_timer -= dt
             if self.rude_buster_beam is not None:
@@ -869,15 +1060,20 @@ class DeltaruneBattle:
                     self.black_flash_state["hit2_done"] = True
                     d1 = self.black_flash_state["hit1_dmg"]
                     d2 = self.black_flash_state["hit2_dmg"]
-                    self.enemy["hp"] = max(0, self.enemy["hp"] - d2)
-                    self.sound_fx.play_shatter()
-                    self.sound_fx.play_crit()
-                    self.screen_shake = 12.0
+                    is_perf = self.black_flash_state.get("perfect", True)
+                    self._apply_enemy_damage(d2)
+                    if is_perf:
+                        self.sound_fx.play_shatter()
+                        self.sound_fx.play_crit()
+                        self.screen_shake = 12.0
+                    else:
+                        self.sound_fx.play_enemy_hit()
+                        self.screen_shake = 6.5
                     self.enemy_hit_flash = 0.65
                     self.hero_lunge_x = 28.0
-                    self._spawn_black_flash_vfx(int(self.enemy_base_x), int(self.enemy_base_y), shatter_burst=True)
-                    self.floating_dmg = f"¡¡DOBLE IMPACTO!! {d1}+{d2}"
-                    self.floating_dmg_color = (255, 235, 85)
+                    self._spawn_black_flash_vfx(int(self.enemy_base_x), int(self.enemy_base_y), shatter_burst=is_perf)
+                    self.floating_dmg = f"¡¡DOBLE IMPACTO!! {d1}+{d2}" if is_perf else f"2do GOLPE {d1}+{d2}"
+                    self.floating_dmg_color = (255, 235, 85) if is_perf else (255, 175, 85)
                     self.floating_dmg_pos = [float(self.enemy_base_x), float(self.enemy_base_y - 30)]
                     self.floating_dmg_vy = -82.0
 
@@ -885,24 +1081,38 @@ class DeltaruneBattle:
                 self.rude_buster_beam = None
                 bf = self.black_flash_state
                 self.black_flash_state = None
-                if self.enemy["hp"] <= 0:
+                if self.enemy["hp"] <= 0 and not self.is_tutorial_dummy:
                     self._trigger_victory(spared=False)
                 else:
                     self.state = "ACTION_TEXT"
                     if bf is not None:
-                        if bf["landed"]:
+                        if bf["landed"] and bf.get("perfect", True):
                             tot = bf["hit1_dmg"] + bf["hit2_dmg"]
                             self.action_message = (
-                                f"* ¡¡BLACK FLASH ACERTADO (15%)!! ¡El espacio se rompió como un cristal!\n"
+                                f"* ¡¡BLACK FLASH PERFECTO!! ¡Precisión total en la diana; el espacio se rompió como cristal!\n"
                                 f"* ¡Doble impacto (+20% fuerza): {bf['hit1_dmg']} + {bf['hit2_dmg']} = {tot} de daño!"
+                            )
+                        elif bf["landed"]:
+                            tot = bf["hit1_dmg"] + bf["hit2_dmg"]
+                            self.action_message = (
+                                f"* ¡Tu concentración no fue exacta! El BlackFlash no fue perfecto.\n"
+                                f"* Daño reducido en los 2 impactos: {bf['hit1_dmg']} + {bf['hit2_dmg']} = {tot} de daño."
                             )
                         else:
                             self.action_message = (
-                                "* ¡Paniel desató BlackFlash (50% TP), pero falló el 15% de probabilidad!\n"
-                                "* (Destellos de Fuego Oscuro y cristal quebrado resonaron en el aire)"
+                                f"* ¡Fallaste la diana de concentración! El BlackFlash se desestabilizó.\n"
+                                f"* Solo lograste un roce inestable de {bf['hit1_dmg']} de daño."
                             )
                     else:
                         self.action_message = f"* ¡Paniel atacó a {self.enemy['name']} ({self.attack_rating})!"
+                    if self.is_tutorial_dummy and self.enemy["hp"] <= 1:
+                        self.enemy["hp"] = 1
+                        if self.tutorial_goal_completed:
+                            self.enemy["mercy"] = 100
+                            self.action_message += "\n* ¡Los entrenadores no se pueden matar (1 HP)! Ya cumpliste su prueba (4/4): usa [SPARE]."
+                        else:
+                            self.enemy["mercy"] = min(100, int(round((self.tutorial_goal_count / self.tutorial_goal_target) * 100)))
+                            self.action_message += f"\n* ¡No puedes matarlo (1 HP) ni ganar por daño! Supera su prueba ({self.tutorial_goal_count}/{self.tutorial_goal_target}) en su turno."
 
         elif self.state == "ENEMY_TURN":
             self.turn_timer -= dt
@@ -912,6 +1122,14 @@ class DeltaruneBattle:
                 self.speech_bubble_timer -= dt
             if self.invulnerable_timer > 0:
                 self.invulnerable_timer = max(0.0, self.invulnerable_timer - dt)
+            if self.soul_dash_cooldown > 0:
+                self.soul_dash_cooldown = max(0.0, self.soul_dash_cooldown - dt)
+            if self.tutorial_dash_window > 0:
+                self.tutorial_dash_window = max(0.0, self.tutorial_dash_window - dt)
+
+            for aft in self.soul_dash_afterimages:
+                aft["life"] -= dt
+            self.soul_dash_afterimages = [a for a in self.soul_dash_afterimages if a["life"] > 0]
 
             keys = pygame.key.get_pressed()
             sdx, sdy = 0.0, 0.0
@@ -924,13 +1142,28 @@ class DeltaruneBattle:
             if keys[pygame.K_DOWN] or keys[pygame.K_s]:
                 sdy += 1.0
 
-            is_focus = (keys[pygame.K_x] or keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])
-            soul_spd = self.soul_speed_focus if is_focus else self.soul_speed_normal
-
             if sdx != 0 or sdy != 0:
                 mag = math.hypot(sdx, sdy)
-                self.soul_x += (sdx / mag) * soul_spd * dt
-                self.soul_y += (sdy / mag) * soul_spd * dt
+                self.soul_last_dir = [sdx / mag, sdy / mag]
+
+            if self.soul_dash_timer > 0:
+                self.soul_dash_timer = max(0.0, self.soul_dash_timer - dt)
+                self.soul_dash_afterimages.append({
+                    "x": self.soul_x,
+                    "y": self.soul_y,
+                    "life": 0.16,
+                    "max_life": 0.16,
+                })
+                self.soul_x += self.soul_dash_dir[0] * self.soul_dash_speed * dt
+                self.soul_y += self.soul_dash_dir[1] * self.soul_dash_speed * dt
+            else:
+                is_focus = (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])
+                soul_spd = self.soul_speed_focus if is_focus else self.soul_speed_normal
+
+                if sdx != 0 or sdy != 0:
+                    mag = math.hypot(sdx, sdy)
+                    self.soul_x += (sdx / mag) * soul_spd * dt
+                    self.soul_y += (sdy / mag) * soul_spd * dt
 
             # Confinar estrictamente al alma dentro de la arena entre Paniel y el enemigo
             pad = 6
@@ -958,7 +1191,54 @@ class DeltaruneBattle:
                         self.soul_x += (vdx / vdist) * vpull
                         self.soul_y += (vdy / vdist) * vpull
 
-                if b.check_graze(soul_pt, graze_radius=15.0):
+                # Comprobación de Parry activo (Alma Verde con [Z]):
+                if self.parry_active_timer > 0:
+                    if b.collides_with_soul(soul_pt, soul_radius=6.2):
+                        self._execute_parry(b)
+                        continue
+
+                # Verificación estricta de pruebas del Tutorial (solo cuenta si se ejecuta bien SIN recibir golpe)
+                if self.template_id == "maniqui_esquiva" and isinstance(b, TutorialDodgeWaveBullet):
+                    if b.check_clean_dodge(soul_pt):
+                        self.sound_fx.play_spare()
+                        self._advance_tutorial_progress("ESQUIVA")
+                elif self.template_id == "maniqui_dash" and isinstance(b, TutorialDashWallBullet):
+                    is_dashing_now = (self.soul_dash_timer > 0 or self.tutorial_dash_window > 0)
+                    if b.check_clean_dash_cross(soul_pt, is_dashing_now):
+                        self.sound_fx.play_spare()
+                        self._advance_tutorial_progress("DASH [X]")
+
+                if b.collides_with_soul(soul_pt, soul_radius=3.0):
+                    if hasattr(b, "hit_player"):
+                        b.hit_player = True
+                    if self.invulnerable_timer <= 0:
+                        defense_bonus = 4 if self.defending else 0
+                        raw_dmg = self.enemy["attack"] - (self.player.effective_defense + defense_bonus)
+                        dmg = max(1, int(round(raw_dmg + random.uniform(-0.5, 1.2))))
+                        min_hp = 1 if self.template.get("is_tutorial_dummy", False) else 0
+                        self.player.hp = max(min_hp, self.player.hp - dmg)
+                        if not self.template.get("is_tutorial_dummy", False):
+                            self.player.modify_sanity(-2.5)
+                        else:
+                            fail_msg = {
+                                "maniqui_esquiva": "¡GOLPEADO! Entra por el HUECO VERDE",
+                                "maniqui_parry": "¡SIN PARRY! Pulsa [Z] antes del golpe",
+                                "maniqui_dash": "¡GOLPEADO! Pulsa [X] al cruzar el muro",
+                            }.get(self.template_id, "¡INTÉNTALO DE NUEVO!")
+                            self.parry_floating_txt = fail_msg
+                            self.parry_floating_pos = [float(self.soul_x), float(self.soul_y - 14)]
+                            self.parry_floating_life = 0.90
+                        self.invulnerable_timer = 0.85
+                        self.hero_hurt_flash = 0.45
+                        self.screen_shake = 5.0
+                        self.sound_fx.play_hurt()
+                        b.alive = False
+
+                        if self.player.hp <= 0:
+                            self._trigger_game_over()
+                            return
+
+                if b.alive and b.check_graze(soul_pt, graze_radius=15.0):
                     self.sound_fx.play_graze()
                     self.tp = min(100.0, self.tp + 3.0)
                     self.graze_flash_timer = 0.20
@@ -977,29 +1257,6 @@ class DeltaruneBattle:
                             "life": 0.24,
                         })
 
-                # Comprobación de Parry activo (Alma Verde con [Z]):
-                if self.parry_active_timer > 0:
-                    if b.collides_with_soul(soul_pt, soul_radius=5.5):
-                        self._execute_parry(b)
-                        continue
-
-                if b.collides_with_soul(soul_pt, soul_radius=3.0):
-                    if self.invulnerable_timer <= 0:
-                        defense_bonus = 4 if self.defending else 0
-                        raw_dmg = self.enemy["attack"] - (self.player.effective_defense + defense_bonus)
-                        dmg = max(1, int(round(raw_dmg + random.uniform(-0.5, 1.2))))
-                        self.player.hp = max(0, self.player.hp - dmg)
-                        self.player.modify_sanity(-2.5)
-                        self.invulnerable_timer = 0.85
-                        self.hero_hurt_flash = 0.45
-                        self.screen_shake = 5.0
-                        self.sound_fx.play_hurt()
-                        b.alive = False
-
-                        if self.player.hp <= 0:
-                            self._trigger_game_over()
-                            return
-
             self.bullets = [b for b in self.bullets if b.alive]
 
             if self.turn_timer <= 0:
@@ -1008,11 +1265,27 @@ class DeltaruneBattle:
                 self.floating_dmg = None
                 self.parry_active_timer = 0.0
                 self.state = "MENU"
-                self.action_message = random.choice([
-                    f"* {self.enemy['name']} acecha entre la niebla oscura.",
-                    "* El poder del Dark World resuena alrededor de Paniel.",
-                    "* El alma de Paniel brilla con determinación.",
-                ])
+                if self.is_tutorial_dummy:
+                    if self.tutorial_goal_completed:
+                        self.enemy["mercy"] = 100
+                        self.action_message = (
+                            f"* ¡¡PRUEBA SUPERADA (4/4)!! Has dominado la lección de {self.enemy['name']}.\n"
+                            "* ¡Su MERCY está al 100% (★): selecciona [SPARE] ahora para graduarte!"
+                        )
+                    else:
+                        rem = self.tutorial_goal_target - self.tutorial_goal_count
+                        hint_map = {
+                            "maniqui_esquiva": f"* Instructor de Esquiva: 'Llevas {self.tutorial_goal_count}/4 esquivas limpias. ¡Te faltan {rem} barreras por el HUECO VERDE!'",
+                            "maniqui_parry": f"* Instructor de Parry: 'Llevas {self.tutorial_goal_count}/4 Parrys. ¡Te faltan {rem} bloqueos pulsando [Z] frente a mis esferas!'",
+                            "maniqui_dash": f"* Instructor de Dash: 'Llevas {self.tutorial_goal_count}/4 muros cruzados. ¡Te faltan {rem} muros atravesándolos con [X]!'",
+                        }
+                        self.action_message = hint_map.get(self.template_id, "* ¡Realiza la acción que pide el Instructor!")
+                else:
+                    self.action_message = random.choice([
+                        f"* {self.enemy['name']} acecha entre la niebla oscura.",
+                        "* El poder del Dark World resuena alrededor de Paniel.",
+                        "* El alma de Paniel brilla con determinación.",
+                    ])
 
         elif self.state == "GAME_OVER":
             self.game_over_timer += dt
@@ -1080,64 +1353,138 @@ class DeltaruneBattle:
         dm = self.diff_mult * boss_dm
         sm = self.spd_mult * boss_sm
 
-        if self.current_pattern == "shadow_rain":
-            if self.bullet_spawn_timer >= 0.32 / dm:
+        if self.current_pattern == "tutorial_dodge_corridor":
+            if self.bullet_spawn_timer >= 1.15:
+                self.bullet_spawn_timer = 0.0
+                self.tutorial_wave_side = not self.tutorial_wave_side
+                # Colocar el hueco seguro lejos de la posición Y actual del corazón para obligar a moverse y esquivar
+                if self.soul_y < bb.centery:
+                    gap_y = random.uniform(bb.centery + 18, bb.bottom - 26)
+                else:
+                    gap_y = random.uniform(bb.top + 26, bb.centery - 18)
+                self.bullets.append(TutorialDodgeWaveBullet(bb, gap_y, from_right=self.tutorial_wave_side, speed=82.0))
+                self.sound_fx.play_warning()
+
+        elif self.current_pattern == "tutorial_parry_orbs":
+            if self.bullet_spawn_timer >= 1.25:
+                self.bullet_spawn_timer = 0.0
+                side = random.choice(["LEFT", "RIGHT", "TOP"])
+                sx, sy = self._safe_spawn_pos(bb, min_dist=58.0, preferred_side=side)
+                self.bullets.append(TutorialParryOrbBullet(sx, sy, self.soul_x, self.soul_y, speed=64.0))
+                self.sound_fx.play_warning()
+
+        elif self.current_pattern == "tutorial_dash_walls":
+            if self.bullet_spawn_timer >= 1.35:
+                self.bullet_spawn_timer = 0.0
+                self.tutorial_wave_side = not self.tutorial_wave_side
+                horiz = random.choice([True, False])
+                self.bullets.append(TutorialDashWallBullet(bb, horizontal_sweep=horiz, from_end=self.tutorial_wave_side, speed=106.0))
+                self.sound_fx.play_warning()
+
+        elif self.current_pattern == "shadow_rain":
+            if self.bullet_spawn_timer >= 0.28 / dm:
                 self.bullet_spawn_timer = 0.0
                 rx = random.uniform(bb.left + 12, bb.right - 12)
                 phase = random.uniform(0, math.pi * 2)
                 b = ShadowRainBullet(rx, bb.top + 2, phase=phase)
                 b.vy *= sm
                 self.bullets.append(b)
+                if random.random() < 0.35:
+                    sx, sy = self._safe_spawn_pos(bb, min_dist=48.0, preferred_side=random.choice(["LEFT", "RIGHT"]))
+                    ang = math.atan2(self.soul_y - sy, self.soul_x - sx) + random.uniform(-0.35, 0.35)
+                    self.bullets.append(ErraticWispBullet(sx, sy, math.cos(ang) * 78.0 * sm, math.sin(ang) * 78.0 * sm))
 
         elif self.current_pattern == "shadow_spiral":
-            if self.bullet_spawn_timer >= 0.65 / dm:
+            if self.bullet_spawn_timer >= 0.56 / dm:
                 self.bullet_spawn_timer = 0.0
-                base_a = self.anim_time * 2.0
-                count = 4 if self.lv_bonus >= 3 else 3
+                base_a = self.anim_time * 2.4 + random.uniform(-0.4, 0.4)
+                count = 4 if self.lv_bonus >= 2 else 3
                 for i in range(count):
                     self.bullets.append(
-                        ShadowSpiralBullet(bb.centerx, bb.centery, base_a + i * (math.pi * 2 / count), speed=48.0 * sm)
+                        ShadowSpiralBullet(bb.centerx, bb.centery, base_a + i * (math.pi * 2 / count), speed=54.0 * sm)
                     )
+                if random.random() < 0.40:
+                    sx, sy = self._safe_spawn_pos(bb, min_dist=48.0, preferred_side="TOP")
+                    self.bullets.append(ErraticWispBullet(sx, sy, random.uniform(-45, 45), 76.0 * sm))
 
         elif self.current_pattern == "diamond_swords":
-            if self.bullet_spawn_timer >= 0.72 / dm:
+            if self.bullet_spawn_timer >= 0.62 / dm:
                 self.bullet_spawn_timer = 0.0
-                tx = self.soul_x + random.uniform(-18, 18)
+                tx = self.soul_x + random.uniform(-22, 22)
                 tx = max(bb.left + 8, min(bb.right - 8, tx))
                 b = DiamondSwordBullet(tx, bb.top - 8, bb.top)
                 b.vy *= sm
                 self.bullets.append(b)
+                if random.random() < 0.45:
+                    side = "RIGHT" if self.soul_x < bb.centerx else "LEFT"
+                    ry = random.uniform(bb.top + 14, bb.bottom - 14)
+                    vx = (-85.0 if side == "RIGHT" else 85.0) * sm
+                    self.bullets.append(CrossfireDiamondBullet(bb.right + 4 if side == "RIGHT" else bb.left - 4, ry, vx=vx))
                 self.sound_fx.play_warning()
 
         elif self.current_pattern == "crossfire_diamonds":
-            if self.bullet_spawn_timer >= 0.44 / dm:
+            if self.bullet_spawn_timer >= 0.38 / dm:
                 self.bullet_spawn_timer = 0.0
-                side = "RIGHT" if self.soul_x < bb.centerx else "LEFT"
+                side = random.choice(["LEFT", "RIGHT"])
                 ry = random.uniform(bb.top + 10, bb.bottom - 10)
-                if abs(ry - self.soul_y) < 22:
-                    ry = max(bb.top + 12, min(bb.bottom - 12, self.soul_y + random.choice([-32, 32])))
+                if abs(ry - self.soul_y) < 20:
+                    ry = max(bb.top + 12, min(bb.bottom - 12, self.soul_y + random.choice([-28, 28])))
                 if side == "LEFT":
-                    self.bullets.append(CrossfireDiamondBullet(bb.left - 5, ry, vx=82.0 * sm))
+                    self.bullets.append(CrossfireDiamondBullet(bb.left - 5, ry, vx=88.0 * sm))
                 else:
-                    self.bullets.append(CrossfireDiamondBullet(bb.right + 5, ry, vx=-82.0 * sm))
+                    self.bullets.append(CrossfireDiamondBullet(bb.right + 5, ry, vx=-88.0 * sm))
 
         elif self.current_pattern == "bouncing_notes":
-            max_notes = 4 if self.lv_bonus >= 2 else 3
-            if len(self.bullets) < max_notes and self.bullet_spawn_timer >= 0.5 / dm:
+            max_notes = 5 if self.lv_bonus >= 2 else 4
+            if len(self.bullets) < max_notes and self.bullet_spawn_timer >= 0.42 / dm:
                 self.bullet_spawn_timer = 0.0
-                ang = random.uniform(0.3, 1.2) + random.choice([0, math.pi / 2, math.pi, math.pi * 1.5])
-                spd = 65.0 * sm
+                ang = random.uniform(0.25, 1.35) + random.choice([0, math.pi / 2, math.pi, math.pi * 1.5])
+                spd = 74.0 * sm
                 sx, sy = self._safe_spawn_pos(bb, min_dist=50.0, preferred_side="TOP")
                 self.bullets.append(BouncingNoteBullet(sx, sy, math.cos(ang) * spd, math.sin(ang) * spd))
 
         elif self.current_pattern == "sound_arcs":
-            if self.bullet_spawn_timer >= 1.05 / dm:
+            if self.bullet_spawn_timer >= 0.88 / dm:
                 self.bullet_spawn_timer = 0.0
                 gap_angle = random.uniform(0.4, math.pi - 0.4)
                 for i in range(12):
                     ang = (i / 12.0) * math.pi
                     if abs(ang - gap_angle) > 0.35:
-                        self.bullets.append(SoundArcBullet(bb.centerx, bb.top + 4, ang, speed=52.0 * sm))
+                        self.bullets.append(SoundArcBullet(bb.centerx, bb.top + 4, ang, speed=58.0 * sm))
+
+        # --- PATRONES DEL DARK WORLD ("bufon_caos" y "centinela_neon") ---
+        elif self.current_pattern == "erratic_chaos_cards":
+            if self.bullet_spawn_timer >= 0.36 / dm:
+                self.bullet_spawn_timer = 0.0
+                side = random.choice(["TOP", "LEFT", "RIGHT"])
+                sx, sy = self._safe_spawn_pos(bb, min_dist=48.0, preferred_side=side)
+                ang = math.atan2(self.soul_y - sy, self.soul_x - sx) + random.uniform(-0.42, 0.42)
+                spd = random.uniform(76.0, 108.0) * sm
+                suit = random.choice(["DIAMOND", "SPADE"])
+                self.bullets.append(ErraticChaosCardBullet(sx, sy, math.cos(ang) * spd, math.sin(ang) * spd, suit=suit))
+
+        elif self.current_pattern == "jester_ricochet_scythes":
+            active_sc = len([b for b in self.bullets if isinstance(b, ChaosBouncingScythe)])
+            if active_sc < 3 and self.bullet_spawn_timer >= 0.55 / dm:
+                self.bullet_spawn_timer = 0.0
+                sx, sy = self._safe_spawn_pos(bb, min_dist=52.0, preferred_side="TOP")
+                ang = random.uniform(0.35, 2.75)
+                spd = 86.0 * sm
+                self.bullets.append(ChaosBouncingScythe(sx, sy, math.cos(ang) * spd, math.sin(ang) * spd, max_bounces=4))
+            elif self.bullet_spawn_timer >= 0.42 / dm:
+                self.bullet_spawn_timer = 0.0
+                sx, sy = self._safe_spawn_pos(bb, min_dist=48.0, preferred_side=random.choice(["LEFT", "RIGHT"]))
+                ang = math.atan2(self.soul_y - sy, self.soul_x - sx) + random.uniform(-0.35, 0.35)
+                self.bullets.append(ErraticChaosCardBullet(sx, sy, math.cos(ang) * 84.0 * sm, math.sin(ang) * 84.0 * sm))
+
+        elif self.current_pattern == "erratic_cyber_viruses":
+            if self.bullet_spawn_timer >= 0.34 / dm:
+                self.bullet_spawn_timer = 0.0
+                side = random.choice(["TOP", "LEFT", "RIGHT"])
+                sx, sy = self._safe_spawn_pos(bb, min_dist=48.0, preferred_side=side)
+                ang = math.atan2(self.soul_y - sy, self.soul_x - sx) + random.uniform(-0.32, 0.32)
+                spd = random.uniform(78.0, 112.0) * sm
+                self.bullets.append(CyberNeonGlitchBullet(sx, sy, math.cos(ang) * spd, math.sin(ang) * spd))
 
         # --- PATRONES DEL ACÓLITO ENCAPUCHADO DE LA SECTA ("sectario") ---
         elif self.current_pattern == "cult_daggers":
@@ -1405,7 +1752,10 @@ class DeltaruneBattle:
 
         # 5. Caja inferior de diálogo / submenús / barra de ataque (se oculta al bajar la barra de acciones en ENEMY_TURN)
         if self.state != "ENEMY_TURN":
-            if self.state in ["ATTACK_METER", "SLASH_ANIM"]:
+            if self.state == "BLACK_FLASH_AIM" or (self.state == "SLASH_ANIM" and self.last_attack_was_bf):
+                self._draw_dialogue_and_submenus(surface, empty_box=True)
+                self._draw_clover_black_flash_reticle(surface)
+            elif self.state in ["ATTACK_METER", "SLASH_ANIM"]:
                 self._draw_dialogue_and_submenus(surface, empty_box=True)
                 self._draw_attack_meter(surface)
             else:
@@ -1425,9 +1775,59 @@ class DeltaruneBattle:
         if self.floating_dmg and self.state in ["SLASH_ANIM", "ACTION_TEXT"]:
             self._draw_floating_damage(surface)
 
+        # 8.5 Panel superior de Progreso de la Prueba en vivo durante los combates del Tutorial
+        if self.is_tutorial_dummy and self.state != "GAME_OVER":
+            self._draw_tutorial_progress_banner(surface)
+
         # 9. Pantalla de Game Over
         if self.state == "GAME_OVER":
             self._draw_game_over(surface)
+
+    def _draw_tutorial_progress_banner(self, surface):
+        """Dibuja un panel superior organizado en 2 columnas (Instrucción a la izquierda, Contador + 4 casillas a la derecha)."""
+        banner = pygame.Rect(32, 4, 248, 36)
+        pygame.draw.rect(surface, (10, 14, 28), banner, border_radius=4)
+        b_col = (255, 235, 80) if self.tutorial_goal_completed else (85, 225, 255)
+        pygame.draw.rect(surface, b_col, banner, 2, border_radius=4)
+
+        # Línea divisoria vertical que separa el texto de la izquierda y el medidor 4/4 de la derecha
+        div_x = banner.right - 56
+        pygame.draw.line(surface, (55, 85, 135), (div_x, banner.y + 4), (div_x, banner.bottom - 4), 1)
+
+        if self.tutorial_goal_completed:
+            t1 = "★ ¡PRUEBA COMPLETADA! ★"
+            t2 = "Elige [SPARE] en tu turno"
+            c1, c2 = (255, 240, 85), (120, 255, 160)
+        else:
+            if self.template_id == "maniqui_esquiva":
+                t1 = "1. PRUEBA DE ESQUIVA"
+                t2 = "Cruza por el HUECO VERDE"
+            elif self.template_id == "maniqui_parry":
+                t1 = "2. PRUEBA DE PARRY [Z]"
+                t2 = "Pulsa [Z] ante la esfera"
+            else:
+                t1 = "3. PRUEBA DE DASH [X]"
+                t2 = "Cruza el muro con [X]"
+            c1, c2 = (255, 255, 255), (175, 225, 255)
+
+        s1 = self.font_hud.render(t1, False, c1)
+        s2 = self.font_dialogue.render(t2, False, c2)
+        surface.blit(s1, (banner.x + 8, banner.y + 5))
+        surface.blit(s2, (banner.x + 8, banner.y + 20))
+
+        # Columna derecha: Contador X/4 centrado arriba y 4 casillas alineadas abajo
+        cnt_str = f"{self.tutorial_goal_count}/{self.tutorial_goal_target}"
+        cnt_col = (100, 255, 145) if self.tutorial_goal_completed else (255, 235, 90)
+        cnt_s = self.font_hud.render(cnt_str, False, cnt_col)
+        right_cx = div_x + (banner.right - div_x) // 2
+        surface.blit(cnt_s, (right_cx - cnt_s.get_width() // 2, banner.y + 4))
+
+        for pi in range(self.tutorial_goal_target):
+            px = div_x + 9 + pi * 10
+            py = banner.y + 21
+            filled = (pi < self.tutorial_goal_count)
+            pygame.draw.rect(surface, (65, 250, 130) if filled else (30, 36, 58), (px, py, 8, 9), border_radius=1)
+            pygame.draw.rect(surface, (255, 255, 255), (px, py, 8, 9), 1, border_radius=1)
 
     def _draw_dark_world_background(self, surface, ox, oy):
         """Dibuja la característica cuadrícula neón púrpura/verde de combate de Deltarune."""
@@ -1662,21 +2062,22 @@ class DeltaruneBattle:
         is_prepping = (self.turn_prep_timer > 0)
         flash_prep = is_prepping and (int(self.anim_time * 16) % 2 == 0)
 
-        # Sombra exterior y borde: ámbar parpadeante durante advertencia previa, verde neón normal
+        # Sombra exterior y borde más grueso: ámbar parpadeante durante advertencia previa, verde neón normal
         border_col = (255, 235, 90) if flash_prep else (65, 235, 115)
         shadow_col = (200, 140, 40) if is_prepping else (35, 185, 95)
-        pygame.draw.rect(surface, shadow_col, box.inflate(4, 4), 1)
+        pygame.draw.rect(surface, shadow_col, box.inflate(6, 6), 2)
         pygame.draw.rect(surface, (0, 0, 0), box)
-        pygame.draw.rect(surface, border_col, box, 2)
+        pygame.draw.rect(surface, border_col, box, 4)
 
         # Letrero de aviso en la parte superior de la arena durante el tiempo de preparación
         if is_prepping and box.height > 60:
             warn_lbl = self.font_hud.render("! ALERTA !", False, (255, 235, 90) if flash_prep else (255, 120, 120))
-            surface.blit(warn_lbl, (box.centerx - warn_lbl.get_width() // 2, max(36, box.top - 12)))
+            warn_y = (box.top + 8) if self.is_tutorial_dummy else max(36, box.top - 12)
+            surface.blit(warn_lbl, (box.centerx - warn_lbl.get_width() // 2, warn_y))
 
         # Recortar estrictamente las balas dentro de la arena para que jamás salgan ni tapen la barra de vida
         prev_clip = surface.get_clip()
-        surface.set_clip(box.inflate(-2, -2))
+        surface.set_clip(box.inflate(-4, -4))
 
         for sp in self.graze_sparks:
             alpha = int(255 * (sp["life"] / 0.24))
@@ -1723,7 +2124,15 @@ class DeltaruneBattle:
             self._draw_heart_silhouette(surface, sx + 5, sy + 5, scale=1.05, color=(120, 240, 255), alpha=int(pulse_alpha * 0.65), is_outline=False)
             self._draw_heart_silhouette(surface, sx + 5, sy + 5, scale=1.12, color=(255, 255, 255), alpha=pulse_alpha, is_outline=True)
 
-        if self.invulnerable_timer <= 0 or (int(self.anim_time * 20) % 2 == 0):
+        # Estelas fantasma del Dash del corazón con [X]
+        for aft in self.soul_dash_afterimages:
+            a_ratio = max(0.0, min(1.0, aft["life"] / aft["max_life"]))
+            ax = int(aft["x"] + ox)
+            ay = int(aft["y"] + oy)
+            self._draw_heart_silhouette(surface, ax, ay, scale=1.0, color=(255, 80, 140), alpha=int(185 * a_ratio), is_outline=False)
+            self._draw_heart_silhouette(surface, ax, ay, scale=1.08, color=(120, 245, 255), alpha=int(220 * a_ratio), is_outline=True)
+
+        if self.invulnerable_timer <= 0 or self.soul_dash_timer > 0 or (int(self.anim_time * 20) % 2 == 0):
             self._draw_soul(surface, sx, sy)
 
         # Texto flotante de Parry exitoso dentro de la arena
@@ -1737,23 +2146,37 @@ class DeltaruneBattle:
 
         surface.set_clip(prev_clip)
 
-        # Indicador de estado del Parry [Z] debajo de la arena durante el combate
+        # Indicador de estado del Parry [Z] y Dash [X] debajo de la arena durante el combate
         if box.height > 60:
             if self.parry_active_timer > 0:
-                p_text = "[Z] ¡PARRY ACTIVO!"
+                p_text = "[Z] ¡PARRY!"
                 p_col = (120, 255, 170) if (int(self.anim_time * 16) % 2 == 0) else (255, 255, 255)
             elif self.parry_cooldown > 0:
-                p_text = f"[Z] PARRY: {self.parry_cooldown:.1f}s"
+                p_text = f"[Z] PARRY:{self.parry_cooldown:.1f}s"
                 p_col = (185, 190, 210)
             else:
-                p_text = "[Z] PARRY: LISTO"
+                p_text = "[Z] PARRY:LISTO"
                 p_col = (65, 245, 120)
-            parry_lbl = self.font_hud.render(p_text, False, p_col)
-            sh_lbl = self.font_hud.render(p_text, False, (0, 0, 0))
-            px = box.centerx - parry_lbl.get_width() // 2
+
+            if self.soul_dash_timer > 0:
+                d_text = "  [X] ¡DASH!"
+                d_col = (120, 245, 255)
+            elif self.soul_dash_cooldown > 0:
+                d_text = f"  [X] DASH:{self.soul_dash_cooldown:.1f}s"
+                d_col = (185, 190, 210)
+            else:
+                d_text = "  [X] DASH:LISTO"
+                d_col = (110, 235, 255)
+
+            full_hud = p_text + d_text
+            sh_lbl = self.font_hud.render(full_hud, False, (0, 0, 0))
+            p_lbl = self.font_hud.render(p_text, False, p_col)
+            d_lbl = self.font_hud.render(d_text, False, d_col)
+            px = box.centerx - sh_lbl.get_width() // 2
             py = min(226, box.bottom + 3)
             surface.blit(sh_lbl, (px + 1, py + 1))
-            surface.blit(parry_lbl, (px, py))
+            surface.blit(p_lbl, (px, py))
+            surface.blit(d_lbl, (px + p_lbl.get_width(), py))
 
     def _draw_deltarune_party_bar(self, surface):
         """Dibuja la barra horizontal de vida y los botones de acción, que bajan durante la pelea."""
@@ -1844,10 +2267,10 @@ class DeltaruneBattle:
     def _draw_dialogue_and_submenus(self, surface, empty_box=False):
         box = self.default_box
         pygame.draw.rect(surface, (0, 0, 0), box)
-        pygame.draw.rect(surface, (110, 65, 210), box.inflate(2, 2), 1)
-        pygame.draw.rect(surface, (255, 255, 255), box, 2)
+        pygame.draw.rect(surface, (110, 65, 210), box.inflate(4, 4), 2)
+        pygame.draw.rect(surface, (255, 255, 255), box, 4)
         inner = box.inflate(-6, -6)
-        pygame.draw.rect(surface, (45, 35, 75), inner, 1)
+        pygame.draw.rect(surface, (45, 35, 75), inner, 2)
 
         if empty_box:
             return
@@ -1925,7 +2348,8 @@ class DeltaruneBattle:
         m = self.meter_rect
         portrait = self.player.get_stat_portrait() if hasattr(self.player, "get_stat_portrait") else None
         if portrait is not None:
-            p_frame = pygame.Rect(m.left - 11, m.centery - 17, 34, 34)
+            pw, ph = portrait.get_size()
+            p_frame = pygame.Rect(m.left - 8, m.centery - (ph + 2) // 2, pw + 2, ph + 2)
             pygame.draw.rect(surface, (18, 12, 32), p_frame, border_radius=2)
             surface.blit(portrait, (p_frame.x + 1, p_frame.y + 1))
             pygame.draw.rect(surface, (110, 70, 200), p_frame, 1, border_radius=2)
@@ -1956,6 +2380,78 @@ class DeltaruneBattle:
         else:
             hint_s = self.font_hud.render("¡Pulsa [Z] en la mira azul!", False, (190, 205, 240))
             surface.blit(hint_s, (track_rect.centerx - hint_s.get_width() // 2, track_rect.top - 13))
+
+    def _draw_clover_black_flash_reticle(self, surface):
+        """Dibuja la diana circular de concentración estilo Clover (Undertale Yellow) para BlackFlash."""
+        box = self.default_box
+        prev_clip = surface.get_clip()
+        surface.set_clip(box.inflate(-6, -6))
+
+        # Retrato de Paniel a la izquierda concentrando Fuego Oscuro
+        portrait = self.player.get_stat_portrait() if hasattr(self.player, "get_stat_portrait") else None
+        if portrait is not None:
+            pw, ph = portrait.get_size()
+            p_frame = pygame.Rect(box.x + 14, box.centery - (ph + 2) // 2 + 4, pw + 2, ph + 2)
+            pygame.draw.rect(surface, (24, 10, 34), p_frame, border_radius=2)
+            surface.blit(portrait, (p_frame.x + 1, p_frame.y + 1))
+            pygame.draw.rect(surface, (240, 40, 95), p_frame, 1, border_radius=2)
+
+        # Centro de la diana circular estilo Clover (Undertale Yellow)
+        cx = box.centerx + 16
+        cy = box.centery + 5
+        tr = int(self.bf_target_radius)
+
+        # Anillos guía concéntricos de la retícula
+        pygame.draw.circle(surface, (55, 30, 75), (cx, cy), 28, 1)
+        pygame.draw.circle(surface, (110, 45, 115), (cx, cy), 20, 1)
+
+        # Líneas de mira (+) estilo revólver de Clover apuntando al centro
+        pygame.draw.line(surface, (180, 90, 210), (cx - 34, cy), (cx - tr - 3, cy), 1)
+        pygame.draw.line(surface, (180, 90, 210), (cx + tr + 3, cy), (cx + 34, cy), 1)
+        pygame.draw.line(surface, (180, 90, 210), (cx, cy - 29), (cx, cy - tr - 3), 1)
+        pygame.draw.line(surface, (180, 90, 210), (cx, cy + tr + 3), (cx, cy + 29), 1)
+
+        # Zona perfecta central (Bullseye ring) con borde negro y núcleo carmesí/dorado
+        in_sweet_spot = abs(self.bf_ring_radius - self.bf_target_radius) <= 6.0
+        target_col = (255, 240, 80) if in_sweet_spot else (240, 45, 95)
+        pygame.draw.circle(surface, (0, 0, 0), (cx, cy), tr + 1, 4)
+        pygame.draw.circle(surface, target_col, (cx, cy), tr, 2)
+        pygame.draw.circle(surface, (255, 220, 240), (cx, cy), 3)
+
+        # Estelas del anillo de concentración contrayéndose hacia el centro
+        for trail in self.bf_ring_trails:
+            rad_t = max(2, int(trail["r"]))
+            tr_s = pygame.Surface((rad_t * 2 + 4, rad_t * 2 + 4), pygame.SRCALPHA)
+            pygame.draw.circle(tr_s, (220, 40, 95, int(max(0, min(255, trail["alpha"])))), (rad_t + 2, rad_t + 2), rad_t, 1)
+            surface.blit(tr_s, (cx - rad_t - 2, cy - rad_t - 2))
+
+        # Anillo principal de concentración que se cierra sobre la diana
+        curr_r = max(2, int(round(self.bf_ring_radius)))
+        ring_col = (255, 245, 95) if in_sweet_spot else (255, 255, 255)
+        if not self.bf_aim_active:
+            if self.bf_precision_tier == "PERFECT":
+                ring_col = (255, 240, 75)
+            elif self.bf_precision_tier == "IMPERFECT":
+                ring_col = (255, 165, 65)
+            else:
+                ring_col = (160, 150, 175)
+
+        pygame.draw.circle(surface, (0, 0, 0), (cx, cy), curr_r + 1, 4)
+        pygame.draw.circle(surface, ring_col, (cx, cy), curr_r, 2)
+
+        # Indicadores laterales de zona ("PERFECTO" vs "IMPERFECTO")
+        if self.bf_aim_active:
+            hint_txt = "¡CONCÉNTRATE! Pulsa [Z] en el anillo central"
+            hint_col = (255, 240, 95) if in_sweet_spot else (255, 195, 220)
+        else:
+            hint_txt = self.attack_rating
+            hint_col = (255, 240, 80) if self.bf_precision_tier == "PERFECT" else (
+                (255, 175, 80) if self.bf_precision_tier == "IMPERFECT" else (190, 170, 210)
+            )
+        lbl = self.font_hud.render(hint_txt, False, hint_col)
+        surface.blit(lbl, (box.centerx - lbl.get_width() // 2, box.top + 6))
+
+        surface.set_clip(prev_clip)
 
     def _draw_floating_damage(self, surface):
         fx, fy = int(self.floating_dmg_pos[0]), int(self.floating_dmg_pos[1])
@@ -2003,8 +2499,23 @@ class DeltaruneBattle:
 
     def _draw_soul(self, surface, x, y, color=None):
         """Dibuja el corazón pixelado de Undertale/Deltarune (11x10, proporción clásica no alargada).
-        Si el Parry con [Z] está activo, se vuelve de color verde (COLOR_SOUL_GREEN) con un escudo vibrante."""
-        c = color if color is not None else (COLOR_SOUL_GREEN if self.parry_active_timer > 0 else COLOR_SOUL_RED)
+        Si el Parry con [Z] está activo, despliega un escudo verde protector alrededor del corazón."""
+        is_parrying = (self.parry_active_timer > 0 and color is None)
+        if is_parrying:
+            pulse = (math.sin(self.anim_time * 28.0) + 1.0) * 0.5
+            sh_surf = pygame.Surface((28, 30), pygame.SRCALPHA)
+            # Silueta de escudo heráldico/hexagonal verde alrededor del corazón
+            outer_pts = [(14, 1), (26, 6), (24, 19), (14, 28), (4, 19), (2, 6)]
+            inner_pts = [(14, 4), (23, 8), (21, 18), (14, 25), (7, 18), (5, 8)]
+            fill_alpha = int(75 + 45 * pulse)
+            pygame.draw.polygon(sh_surf, (35, 225, 105, fill_alpha), outer_pts)
+            pygame.draw.polygon(sh_surf, (55, 255, 130, 245), outer_pts, 2)
+            pygame.draw.polygon(sh_surf, (195, 255, 215, 210), inner_pts, 1)
+            # Destello de brillo diagonal en el escudo
+            pygame.draw.line(sh_surf, (230, 255, 240, 180), (8, 8), (13, 5), 2)
+            surface.blit(sh_surf, (x - 8, y - 9))
+
+        c = color if color is not None else (COLOR_SOUL_GREEN if is_parrying else COLOR_SOUL_RED)
         pygame.draw.rect(surface, c, (x + 1, y, 3, 1))
         pygame.draw.rect(surface, c, (x + 7, y, 3, 1))
         pygame.draw.rect(surface, c, (x, y + 1, 5, 1))
@@ -2015,12 +2526,6 @@ class DeltaruneBattle:
         pygame.draw.rect(surface, c, (x + 3, y + 7, 5, 1))
         pygame.draw.rect(surface, c, (x + 4, y + 8, 3, 1))
         pygame.draw.rect(surface, c, (x + 5, y + 9, 1, 1))
-
-        if self.parry_active_timer > 0 and color is None:
-            pulse = (math.sin(self.anim_time * 28.0) + 1.0) * 0.5
-            rad = int(8 + pulse * 4)
-            pygame.draw.circle(surface, (140, 255, 180), (x + 5, y + 5), rad, 1)
-            pygame.draw.circle(surface, (255, 255, 255), (x + 5, y + 5), max(4, rad - 3), 1)
 
     def _init_soul_silhouette_surfaces(self):
         """Genera las superficies base del corazón y su silueta de contorno para el efecto Graze de Deltarune."""

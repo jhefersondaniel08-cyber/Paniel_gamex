@@ -149,7 +149,11 @@ class SignObject(WorldObject):
 
     def interact(self, dialogue_box, sound_fx, player=None):
         sound_fx.play_select()
-        dialogue_box.start_dialogue([self.message])
+        if isinstance(self.message, list):
+            dialogue_box.start_dialogue(self.message)
+        else:
+            pages = [ln.strip() for ln in str(self.message).split("\n") if ln.strip()]
+            dialogue_box.start_dialogue(pages if pages else [str(self.message)])
 
 
 class ChestObject(WorldObject):
@@ -375,4 +379,97 @@ class InteriorProp(WorldObject):
                 player.modify_sanity(float(self._sanity_boost))
             sound_fx.play_select()
             dialogue_box.start_dialogue(self.dialogue_lines)
+
+
+class DarkWorldVendorNPC(WorldObject):
+    """Vendedor misterioso del Dark World que ofrece el objeto 'Sturdy Arm' (+5 ATK y +10 DEF)."""
+    def __init__(self, x, y):
+        super().__init__(x, y, depth_y=y + 42)
+        self.w = 56
+        self.h = 46
+        self.solid_rect = pygame.Rect(x + 4, y + 18, 48, 26)
+        self.interactable = True
+        self.sold_sturdy_arm = False
+        self.anim_time = 0.0
+
+    def update(self, dt):
+        self.anim_time += dt
+
+    def draw(self, surface, camera):
+        cx, cy = camera.apply((self.x, self.y))
+        bob = int(math.sin(self.anim_time * 3.8) * 2)
+
+        # Sombra neón bajo el puesto del vendedor
+        pygame.draw.ellipse(surface, (10, 6, 22), (cx + 2, cy + 36, 52, 12))
+
+        # Vendedor del Dark World (estilo Rouxls / Swatch / Spamton con gafas neón y túnica cian/magenta)
+        vx = cx + 28
+        vy = cy + 12 + bob
+        pygame.draw.polygon(surface, (28, 16, 48), [(vx - 11, vy + 2), (vx + 11, vy + 2), (vx + 15, vy + 22), (vx - 15, vy + 22)])
+        pygame.draw.polygon(surface, (80, 235, 255), [(vx - 11, vy + 2), (vx + 11, vy + 2), (vx + 15, vy + 22), (vx - 15, vy + 22)], 1)
+        pygame.draw.circle(surface, (18, 12, 32), (vx, vy - 3), 8)
+        # Sombrero / capucha de mercader del Dark World
+        pygame.draw.polygon(surface, (45, 20, 72), [(vx - 11, vy - 5), (vx, vy - 15), (vx + 11, vy - 5)])
+        pygame.draw.polygon(surface, (255, 85, 210), [(vx - 11, vy - 5), (vx, vy - 15), (vx + 11, vy - 5)], 1)
+        # Gafas asimétricas neón (rosa y amarillo estilo Deltarune)
+        pygame.draw.rect(surface, (255, 95, 210), (vx - 6, vy - 5, 5, 4))
+        pygame.draw.rect(surface, (255, 240, 80), (vx + 1, vy - 5, 5, 4))
+
+        # Mostrador de cristal oscuro del Dark World
+        pygame.draw.rect(surface, (22, 14, 38), (cx + 4, cy + 24, 48, 18), border_radius=3)
+        pygame.draw.rect(surface, (0, 0, 0), (cx + 4, cy + 24, 48, 18), 3, border_radius=3)
+        pygame.draw.rect(surface, (85, 240, 255), (cx + 4, cy + 24, 48, 18), 1, border_radius=3)
+        # Letrero SHOP en el frontal
+        pygame.draw.line(surface, (255, 90, 210), (cx + 10, cy + 33), (cx + 46, cy + 33), 2)
+
+        # Objeto "Sturdy Arm" expuesto sobre un cojín flotante si aún no se ha vendido
+        if not self.sold_sturdy_arm:
+            ax = cx + 14
+            ay = cy + 19 - abs(bob)
+            pygame.draw.circle(surface, (90, 245, 255), (ax, ay), 6, 1)
+            # Brazo robótico/mágico plateado y cian
+            pygame.draw.rect(surface, (180, 205, 235), (ax - 5, ay - 2, 10, 4), border_radius=1)
+            pygame.draw.rect(surface, (0, 0, 0), (ax - 5, ay - 2, 10, 4), 1, border_radius=1)
+            pygame.draw.circle(surface, (255, 230, 80), (ax + 3, ay), 2)
+
+    def interact(self, dialogue_box, sound_fx, player=None, shop_menu=None):
+        if player is None:
+            return
+        if shop_menu is not None:
+            shop_menu.open(vendor_npc=self, player=player)
+            return
+        if not self.sold_sturdy_arm:
+            self.sold_sturdy_arm = True
+            sound_fx.play_chest()
+            cost = min(player.gold, 25)
+            player.gold -= cost
+            sturdy_item = {
+                "name": "Sturdy Arm",
+                "heal": 0,
+                "sanity_heal": 0,
+                "atk_bonus": 5,
+                "def_bonus": 10,
+                "desc": "¿Refuerzo robótico o mágico? de brazo. Incrementa +5 de Ataque y +10 de Defensa.",
+            }
+            player.inventory.append(sturdy_item)
+            if not getattr(player, "sturdy_arm_equipped", False):
+                player.sturdy_arm_equipped = True
+                player.attack += 5
+                player.defense += 10
+                player.weapon = "Sturdy Arm"
+                player.armor = "Sturdy Arm (+10 DEF)"
+            dialogue_box.start_dialogue([
+                "* VENDEDOR DEL DARK WORLD: '¡Bienvenido a mi bazar abismal, viajero de la Luz!'",
+                "* 'Tengo una reliquia única para ti: [Sturdy Arm].'",
+                "* Descripción: '¿Refuerzo robótico o mágico? de brazo. Incrementa +5 de Ataque y +10 de Defensa.'",
+                f"* ¡Obtuviste y equipaste [Sturdy Arm]! (+5 ATK y +10 DEF -> ATK {player.effective_attack}, DEF {player.effective_defense})",
+            ])
+        else:
+            sound_fx.play_select()
+            dialogue_box.start_dialogue([
+                "* VENDEDOR DEL DARK WORLD: 'Ese [Sturdy Arm] te sienta de maravilla.'",
+                "* '¿Es tecnología cibernética o hechicería oscura? ¡Nadie en el Dark World lo sabe!'",
+                "* (Puedes ver su descripción en el menú [C] -> ITEM -> Sturdy Arm -> INFO).",
+            ])
+
 

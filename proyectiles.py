@@ -37,12 +37,19 @@ class ShadowRainBullet(Bullet):
         self.base_x = x
         self.phase = phase
         self.time = 0.0
-        self.vy = 58.0
+        self.vy = 64.0
+        self.erratic_freq = random.uniform(8.5, 14.5)
+        self.erratic_amp = random.uniform(16.0, 26.0)
+        self.juke_dir = random.choice([-1.0, 1.0])
 
-    def update(self, dt, arena_rect):
+    def update(self, dt, arena_rect, soul_pos=None):
         self.time += dt
-        self.y += self.vy * dt
-        self.x = self.base_x + math.sin(self.time * 6.0 + self.phase) * 14.0
+        # Caída errática con acelerones y zig-zag impredecible para exigir buen timing de Parry
+        speed_surge = 1.0 + 0.55 * math.sin(self.time * 11.0 + self.phase)
+        self.y += self.vy * speed_surge * dt
+        zig = math.sin(self.time * self.erratic_freq + self.phase) * self.erratic_amp
+        zag = math.cos(self.time * (self.erratic_freq * 1.7)) * 7.0 * self.juke_dir
+        self.x = self.base_x + zig + zag
         if self.y > arena_rect.bottom + 10:
             self.alive = False
 
@@ -53,7 +60,7 @@ class ShadowRainBullet(Bullet):
 
 
 class ShadowSpiralBullet(Bullet):
-    def __init__(self, cx, cy, angle, speed=48.0):
+    def __init__(self, cx, cy, angle, speed=54.0):
         x = cx + math.cos(angle) * 75.0
         y = cy + math.sin(angle) * 75.0
         super().__init__(x, y, radius=3.8)
@@ -61,11 +68,17 @@ class ShadowSpiralBullet(Bullet):
         self.speed = speed
         self.target_cx = cx
         self.target_cy = cy
+        self.time = 0.0
+        self.wobble_phase = random.uniform(0, math.pi * 2)
 
-    def update(self, dt, arena_rect):
-        self.angle += dt * 0.75
-        self.x -= math.cos(self.angle) * self.speed * dt
-        self.y -= math.sin(self.angle) * self.speed * dt
+    def update(self, dt, arena_rect, soul_pos=None):
+        self.time += dt
+        # Giro errático con cambios bruscos de velocidad angular y radial
+        ang_vel = 1.15 + math.sin(self.time * 12.0 + self.wobble_phase) * 1.45
+        self.angle += dt * ang_vel
+        spd_burst = self.speed * (1.0 + 0.45 * math.cos(self.time * 10.0 + self.wobble_phase))
+        self.x -= math.cos(self.angle) * spd_burst * dt
+        self.y -= math.sin(self.angle) * spd_burst * dt
         if not arena_rect.inflate(30, 30).collidepoint(self.x, self.y):
             self.alive = False
 
@@ -79,10 +92,11 @@ class DiamondSwordBullet(Bullet):
     def __init__(self, target_x, start_y, ceiling_y):
         super().__init__(target_x, start_y, radius=4.5)
         self.ceiling_y = ceiling_y
-        self.warn_timer = 0.65
+        self.warn_timer = 0.55
         self.falling = False
-        self.vy = 160.0
+        self.vy = 165.0
         self.time = 0.0
+        self.swerve_phase = random.uniform(0, math.pi * 2)
 
     def update(self, dt, arena_rect, soul_pos=None):
         self.time += dt
@@ -92,6 +106,8 @@ class DiamondSwordBullet(Bullet):
                 self.falling = True
         else:
             self.y += self.vy * dt
+            # Oscilación lateral errática mientras cae
+            self.x += math.sin(self.time * 19.0 + self.swerve_phase) * 72.0 * dt
             if self.y > arena_rect.bottom + 12:
                 self.alive = False
 
@@ -120,9 +136,15 @@ class CrossfireDiamondBullet(Bullet):
     def __init__(self, x, y, vx):
         super().__init__(x, y, radius=4.0)
         self.vx = vx
+        self.time = 0.0
+        self.phase = random.uniform(0, math.pi * 2)
+        self.freq = random.uniform(11.0, 16.0)
 
-    def update(self, dt, arena_rect):
-        self.x += self.vx * dt
+    def update(self, dt, arena_rect, soul_pos=None):
+        self.time += dt
+        surge = 1.0 + 0.4 * math.sin(self.time * 12.0 + self.phase)
+        self.x += self.vx * surge * dt
+        self.y += math.cos(self.time * self.freq + self.phase) * 78.0 * dt
         if not arena_rect.inflate(25, 25).collidepoint(self.x, self.y):
             self.alive = False
 
@@ -138,24 +160,34 @@ class BouncingNoteBullet(Bullet):
         super().__init__(x, y, radius=4.5)
         self.vx = vx
         self.vy = vy
+        self.time = 0.0
+        self.phase = random.uniform(0, math.pi * 2)
 
-    def update(self, dt, arena_rect):
-        self.x += self.vx * dt
-        self.y += self.vy * dt
-        # Rebote en las paredes de la caja de batalla
+    def update(self, dt, arena_rect, soul_pos=None):
+        self.time += dt
+        # Zig-zag rítmico errático en pleno vuelo y desvíos de ángulo al rebotar
+        swerve_x = math.sin(self.time * 14.0 + self.phase) * 38.0
+        swerve_y = math.cos(self.time * 11.0 + self.phase) * 38.0
+        self.x += (self.vx + swerve_x) * dt
+        self.y += (self.vy + swerve_y) * dt
+        # Rebote errático en las paredes de la caja de batalla
         if self.x - self.radius < arena_rect.left:
             self.x = arena_rect.left + self.radius
-            self.vx *= -1
+            self.vx = abs(self.vx) * random.uniform(0.9, 1.15)
+            self.vy += random.uniform(-25, 25)
         elif self.x + self.radius > arena_rect.right:
             self.x = arena_rect.right - self.radius
-            self.vx *= -1
+            self.vx = -abs(self.vx) * random.uniform(0.9, 1.15)
+            self.vy += random.uniform(-25, 25)
 
         if self.y - self.radius < arena_rect.top:
             self.y = arena_rect.top + self.radius
-            self.vy *= -1
+            self.vy = abs(self.vy) * random.uniform(0.9, 1.15)
+            self.vx += random.uniform(-25, 25)
         elif self.y + self.radius > arena_rect.bottom:
             self.y = arena_rect.bottom - self.radius
-            self.vy *= -1
+            self.vy = -abs(self.vy) * random.uniform(0.9, 1.15)
+            self.vx += random.uniform(-25, 25)
 
     def draw(self, surface):
         ix, iy = int(self.x), int(self.y)
@@ -165,14 +197,19 @@ class BouncingNoteBullet(Bullet):
 
 
 class SoundArcBullet(Bullet):
-    def __init__(self, cx, cy, angle, speed=52.0):
+    def __init__(self, cx, cy, angle, speed=58.0):
         super().__init__(cx, cy, radius=3.5)
-        self.vx = math.cos(angle) * speed
-        self.vy = math.sin(angle) * speed
+        self.angle = angle
+        self.speed = speed
+        self.time = 0.0
+        self.phase = random.uniform(0, math.pi * 2)
 
-    def update(self, dt, arena_rect):
-        self.x += self.vx * dt
-        self.y += self.vy * dt
+    def update(self, dt, arena_rect, soul_pos=None):
+        self.time += dt
+        wobble_a = self.angle + math.sin(self.time * 13.0 + self.phase) * 0.48
+        spd = self.speed * (1.0 + 0.45 * math.cos(self.time * 10.0 + self.phase))
+        self.x += math.cos(wobble_a) * spd * dt
+        self.y += math.sin(wobble_a) * spd * dt
         if not arena_rect.inflate(20, 20).collidepoint(self.x, self.y):
             self.alive = False
 
@@ -986,6 +1023,299 @@ class FracturedMirrorShards(Bullet):
                     sx, sy = int(sh["x"]), int(sh["y"])
                     pygame.draw.circle(surface, (255, 60, 110), (sx, sy), 4)
                     pygame.draw.circle(surface, (255, 255, 255), (sx, sy), 2)
+
+
+# ==========================================================
+# PROYECTILES ERRÁTICOS DEL DARK WORLD (BUFÓN DEL CAOS Y CENTINELA NEÓN)
+# ==========================================================
+class ErraticChaosCardBullet(Bullet):
+    """Carta del Caos del Dark World que zigzaguea bruscamente y hace fintas erráticas para retar el Parry."""
+    def __init__(self, x, y, vx, vy, suit="DIAMOND"):
+        super().__init__(x, y, radius=4.5)
+        self.vx = float(vx)
+        self.vy = float(vy)
+        self.suit = suit
+        self.time = 0.0
+        self.phase = random.uniform(0, math.pi * 2)
+        self.juke_timer = random.uniform(0.18, 0.34)
+        self.spin = random.uniform(0, math.pi * 2)
+
+    def update(self, dt, arena_rect, soul_pos=None):
+        self.time += dt
+        self.spin += dt * 14.0
+        self.juke_timer -= dt
+        if self.juke_timer <= 0:
+            self.juke_timer = random.uniform(0.18, 0.34)
+            # Cambio brusco de ángulo (finta errática)
+            ang = math.atan2(self.vy, self.vx) + random.uniform(-0.85, 0.85)
+            if soul_pos is not None and random.random() < 0.55:
+                to_soul = math.atan2(soul_pos[1] - self.y, soul_pos[0] - self.x)
+                ang = to_soul + random.uniform(-0.48, 0.48)
+            spd = max(65.0, min(145.0, math.hypot(self.vx, self.vy) * random.uniform(0.88, 1.22)))
+            self.vx = math.cos(ang) * spd
+            self.vy = math.sin(ang) * spd
+
+        perp_x = -self.vy
+        perp_y = self.vx
+        mag = max(1.0, math.hypot(perp_x, perp_y))
+        zig = math.sin(self.time * 18.0 + self.phase) * 52.0
+        self.x += (self.vx + (perp_x / mag) * zig) * dt
+        self.y += (self.vy + (perp_y / mag) * zig) * dt
+        if not arena_rect.inflate(34, 34).collidepoint(self.x, self.y):
+            self.alive = False
+
+    def draw(self, surface):
+        ix, iy = int(self.x), int(self.y)
+        col = (255, 70, 195) if self.suit == "DIAMOND" else (95, 240, 255)
+        pts = [
+            (ix + int(math.cos(self.spin) * 7), iy + int(math.sin(self.spin) * 7)),
+            (ix + int(math.cos(self.spin + 1.57) * 4), iy + int(math.sin(self.spin + 1.57) * 4)),
+            (ix + int(math.cos(self.spin + 3.14) * 7), iy + int(math.sin(self.spin + 3.14) * 7)),
+            (ix + int(math.cos(self.spin + 4.71) * 4), iy + int(math.sin(self.spin + 4.71) * 4)),
+        ]
+        pygame.draw.polygon(surface, col, pts)
+        pygame.draw.polygon(surface, (0, 0, 0), pts, 2)
+        pygame.draw.circle(surface, (255, 245, 120), (ix, iy), 2)
+
+
+class CyberNeonGlitchBullet(Bullet):
+    """Proyectil cibernético del Dark World que da saltos laterales ('glitch') y acelerones súbitos."""
+    def __init__(self, x, y, vx, vy):
+        super().__init__(x, y, radius=4.5)
+        self.vx = float(vx)
+        self.vy = float(vy)
+        self.time = 0.0
+        self.glitch_timer = random.uniform(0.16, 0.28)
+        self.phase = random.uniform(0, math.pi * 2)
+
+    def update(self, dt, arena_rect, soul_pos=None):
+        self.time += dt
+        self.glitch_timer -= dt
+        if self.glitch_timer <= 0:
+            self.glitch_timer = random.uniform(0.16, 0.28)
+            # Desplazamiento lateral de glitch dentro de la arena
+            perp_x = -self.vy
+            perp_y = self.vx
+            mag = max(1.0, math.hypot(perp_x, perp_y))
+            jump = random.choice([-11.0, 11.0])
+            nx = self.x + (perp_x / mag) * jump
+            ny = self.y + (perp_y / mag) * jump
+            if arena_rect.inflate(-8, -8).collidepoint(nx, ny):
+                self.x, self.y = nx, ny
+
+        burst = 1.0 + 0.65 * math.sin(self.time * 15.0 + self.phase)
+        self.x += self.vx * burst * dt
+        self.y += self.vy * burst * dt
+        if not arena_rect.inflate(32, 32).collidepoint(self.x, self.y):
+            self.alive = False
+
+    def draw(self, surface):
+        ix, iy = int(self.x), int(self.y)
+        jit = random.choice([-1, 0, 1])
+        pygame.draw.rect(surface, (0, 0, 0), (ix - 6 + jit, iy - 6, 12, 12), border_radius=2)
+        pygame.draw.rect(surface, (65, 245, 255), (ix - 4 + jit, iy - 4, 8, 8), border_radius=1)
+        pygame.draw.rect(surface, (255, 80, 215), (ix - 2, iy - 2, 4, 4))
+
+
+# ==========================================================
+# PROYECTILES DE ENTRENAMIENTO DEL TUTORIAL (ESQUIVA, PARRY [Z], DASH [X])
+# ==========================================================
+class TutorialDodgeWaveBullet(Bullet):
+    """Barrera de esferas cian con un HUECO SEGURO iluminado que obliga al jugador a mover el corazón para ESQUIVAR.
+    Solo cuenta como esquiva válida cuando la barrera cruza la posición X del corazón a través del hueco SIN golpearlo."""
+    def __init__(self, arena_rect, gap_y, from_right=True, speed=78.0):
+        start_x = float(arena_rect.right - 4) if from_right else float(arena_rect.left + 4)
+        super().__init__(start_x, gap_y, radius=5.0)
+        self.arena_rect = arena_rect
+        self.gap_y = float(gap_y)
+        self.gap_half_h = 22.0
+        self.vx = -abs(speed) if from_right else abs(speed)
+        self.warn_timer = 0.26
+        self.time = 0.0
+        self.hit_player = False
+        self.dodge_verified = False
+
+    def update(self, dt, arena_rect, soul_pos=None):
+        self.time += dt
+        self.arena_rect = arena_rect
+        if self.warn_timer > 0:
+            self.warn_timer -= dt
+            return
+        self.x += self.vx * dt
+        if self.x < arena_rect.left - 12 or self.x > arena_rect.right + 12:
+            self.alive = False
+
+    def collides_with_soul(self, soul_center, soul_radius=3.0):
+        if self.warn_timer > 0:
+            return False
+        if abs(self.x - soul_center[0]) <= (4.5 + soul_radius):
+            # Si el corazón NO está dentro del hueco seguro, recibe impacto y anula esta repetición
+            if abs(soul_center[1] - self.gap_y) > (self.gap_half_h - soul_radius):
+                self.hit_player = True
+                return True
+        return False
+
+    def check_clean_dodge(self, soul_center):
+        """Retorna True una sola vez cuando la barrera ya pasó por el corazón habiendo cruzado limpiamente por el hueco sin golpear."""
+        if self.warn_timer > 0 or self.hit_player or self.dodge_verified:
+            return False
+        passed_x = (self.vx < 0 and self.x < soul_center[0] - 5.0) or (self.vx > 0 and self.x > soul_center[0] + 5.0)
+        if passed_x and abs(soul_center[1] - self.gap_y) <= (self.gap_half_h + 6.0):
+            self.dodge_verified = True
+            return True
+        return False
+
+    def check_graze(self, soul_center, graze_radius=18.0):
+        if self.warn_timer > 0 or self.grazed or self.hit_player:
+            return False
+        if abs(self.x - soul_center[0]) <= 12.0 and abs(soul_center[1] - self.gap_y) <= (self.gap_half_h + 4.0):
+            self.grazed = True
+            return True
+        return False
+
+    def draw(self, surface):
+        ar = self.arena_rect
+        ix = int(self.x)
+        gy_top = int(self.gap_y - self.gap_half_h)
+        gy_bot = int(self.gap_y + self.gap_half_h)
+
+        # Marco verde brillante del HUECO SEGURO donde el jugador debe moverse para esquivar
+        pulse_g = 180 + int(abs(math.sin(self.time * 12.0)) * 75)
+        pygame.draw.rect(surface, (40, pulse_g, 110), (ix - 6, gy_top + 2, 12, max(6, gy_bot - gy_top - 4)), 2, border_radius=3)
+
+        # Esferas de la barrera por encima y por debajo del hueco
+        for by in range(ar.top + 6, gy_top - 2, 11):
+            pygame.draw.circle(surface, (0, 0, 0), (ix, by), 5)
+            pygame.draw.circle(surface, (85, 225, 255), (ix, by), 4)
+            pygame.draw.circle(surface, (255, 255, 255), (ix, by), 2)
+        for by in range(gy_bot + 4, ar.bottom - 4, 11):
+            pygame.draw.circle(surface, (0, 0, 0), (ix, by), 5)
+            pygame.draw.circle(surface, (85, 225, 255), (ix, by), 4)
+            pygame.draw.circle(surface, (255, 255, 255), (ix, by), 2)
+
+
+class TutorialParryOrbBullet(Bullet):
+    """Esfera esmeralda guiada hacia el corazón con un anillo de sincronización que indica cuándo pulsar [Z] para hacer PARRY."""
+    def __init__(self, x, y, target_x, target_y, speed=64.0):
+        super().__init__(x, y, radius=6.4)
+        ang = math.atan2(target_y - y, target_x - x)
+        self.vx = math.cos(ang) * speed
+        self.vy = math.sin(ang) * speed
+        self.speed = speed
+        self.time = 0.0
+        self.dist_to_soul = 999.0
+
+    def update(self, dt, arena_rect, soul_pos=None):
+        self.time += dt
+        if soul_pos is not None:
+            self.dist_to_soul = math.hypot(soul_pos[0] - self.x, soul_pos[1] - self.y)
+            desired = math.atan2(soul_pos[1] - self.y, soul_pos[0] - self.x)
+            curr = math.atan2(self.vy, self.vx)
+            diff = (desired - curr + math.pi) % (math.pi * 2) - math.pi
+            new_ang = curr + max(-2.6 * dt, min(2.6 * dt, diff))
+            self.vx = math.cos(new_ang) * self.speed
+            self.vy = math.sin(new_ang) * self.speed
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+        if not arena_rect.inflate(28, 28).collidepoint(self.x, self.y):
+            self.alive = False
+
+    def draw(self, surface):
+        ix, iy = int(self.x), int(self.y)
+        in_parry_zone = (self.dist_to_soul <= 28.0)
+        ring_col = (255, 245, 90) if in_parry_zone else (45, 255, 130)
+        pulse_r = (8 if in_parry_zone else 11) + int(abs(math.sin(self.time * 12.0)) * 4)
+        pygame.draw.circle(surface, ring_col, (ix, iy), pulse_r, 2 if in_parry_zone else 1)
+        pygame.draw.circle(surface, (0, 0, 0), (ix, iy), 7)
+        pygame.draw.circle(surface, (55, 245, 125), (ix, iy), 5)
+        pygame.draw.circle(surface, (235, 255, 240), (ix, iy), 2)
+
+
+class TutorialDashWallBullet(Bullet):
+    """Muro de energía dorada de ancho/alto COMPLETO sin huecos: obliga a usar DASH con [X] para atravesarlo sin daño.
+    Solo cuenta como repetición válida cuando el corazón cruza de un lado al otro del muro usando el impulso del DASH [X]."""
+    def __init__(self, arena_rect, horizontal_sweep=True, from_end=True, speed=104.0):
+        self.arena_rect = arena_rect
+        self.horizontal_sweep = horizontal_sweep
+        if horizontal_sweep:
+            sx = float(arena_rect.right - 4) if from_end else float(arena_rect.left + 4)
+            sy = float(arena_rect.centery)
+            self.vel = -abs(speed) if from_end else abs(speed)
+        else:
+            sx = float(arena_rect.centerx)
+            sy = float(arena_rect.bottom - 4) if from_end else float(arena_rect.top + 4)
+            self.vel = -abs(speed) if from_end else abs(speed)
+        super().__init__(sx, sy, radius=5.0)
+        self.warn_timer = 0.38
+        self.time = 0.0
+        self.hit_player = False
+        self.dash_verified = False
+
+    def update(self, dt, arena_rect, soul_pos=None):
+        self.time += dt
+        self.arena_rect = arena_rect
+        if self.warn_timer > 0:
+            self.warn_timer -= dt
+            return
+        if self.horizontal_sweep:
+            self.x += self.vel * dt
+            if self.x < arena_rect.left - 10 or self.x > arena_rect.right + 10:
+                self.alive = False
+        else:
+            self.y += self.vel * dt
+            if self.y < arena_rect.top - 10 or self.y > arena_rect.bottom + 10:
+                self.alive = False
+
+    def collides_with_soul(self, soul_center, soul_radius=3.0):
+        if self.warn_timer > 0:
+            return False
+        if self.horizontal_sweep:
+            return abs(self.x - soul_center[0]) <= (4.0 + soul_radius)
+        else:
+            return abs(self.y - soul_center[1]) <= (4.0 + soul_radius)
+
+    def check_clean_dash_cross(self, soul_center, is_dashing_or_iframes):
+        """Retorna True una sola vez cuando el jugador atraviesa el muro activamente con DASH [X] sin haber recibido daño."""
+        if self.warn_timer > 0 or self.hit_player or self.dash_verified:
+            return False
+        dist = abs(self.x - soul_center[0]) if self.horizontal_sweep else abs(self.y - soul_center[1])
+        if is_dashing_or_iframes and dist <= 18.0:
+            self.dash_verified = True
+            return True
+        return False
+
+    def check_graze(self, soul_center, graze_radius=16.0):
+        if self.warn_timer > 0 or self.grazed:
+            return False
+        dist = abs(self.x - soul_center[0]) if self.horizontal_sweep else abs(self.y - soul_center[1])
+        if dist <= 12.0:
+            self.grazed = True
+            return True
+        return False
+
+    def draw(self, surface):
+        ar = self.arena_rect
+        flash = (int(self.time * 24) % 2 == 0)
+        if self.horizontal_sweep:
+            ix = int(self.x)
+            if self.warn_timer > 0:
+                col = (255, 230, 85) if flash else (180, 130, 40)
+                pygame.draw.line(surface, col, (ix, ar.top + 2), (ix, ar.bottom - 2), 2)
+            else:
+                pygame.draw.rect(surface, (0, 0, 0), (ix - 5, ar.top + 2, 10, ar.height - 4))
+                pygame.draw.rect(surface, (255, 210, 65), (ix - 3, ar.top + 2, 6, ar.height - 4))
+                pygame.draw.line(surface, (255, 255, 255), (ix, ar.top + 2), (ix, ar.bottom - 2), 2)
+        else:
+            iy = int(self.y)
+            if self.warn_timer > 0:
+                col = (255, 230, 85) if flash else (180, 130, 40)
+                pygame.draw.line(surface, col, (ar.left + 2, iy), (ar.right - 2, iy), 2)
+            else:
+                pygame.draw.rect(surface, (0, 0, 0), (ar.left + 2, iy - 5, ar.width - 4, 10))
+                pygame.draw.rect(surface, (255, 210, 65), (ar.left + 2, iy - 3, ar.width - 4, 6))
+                pygame.draw.line(surface, (255, 255, 255), (ar.left + 2, iy), (ar.right - 2, iy), 2)
+
+
 
 
 

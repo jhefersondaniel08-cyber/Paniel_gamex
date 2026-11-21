@@ -16,6 +16,7 @@ class CharacterSpriteManager:
         "TRISTE": "paniel_triste",
         "TRAUMADO": "Paniel_traumado",
         "LOCO": "Paniel_loco",
+        "DARK_WORLD": "Paniel_Dark-World",
     }
 
     def __init__(self, base_dir):
@@ -26,6 +27,7 @@ class CharacterSpriteManager:
             "TRISTE": {"DOWN": [], "UP": [], "LEFT": [], "RIGHT": []},
             "TRAUMADO": {"DOWN": [], "UP": [], "LEFT": [], "RIGHT": []},
             "LOCO": {"DOWN": [], "UP": [], "LEFT": [], "RIGHT": []},
+            "DARK_WORLD": {"DOWN": [], "UP": [], "LEFT": [], "RIGHT": []},
         }
         self.stat_portraits = {}
         self.load_or_generate_sprites()
@@ -69,8 +71,8 @@ class CharacterSpriteManager:
 
         return frames
 
-    def _load_stat_portrait(self, folder, target_size=32):
-        """Carga y recorta Estadisticas.png ajustándolo al tamaño del recuadro y apoyado en la base (sin flotar)."""
+    def _load_stat_portrait(self, folder):
+        """Carga y recorta Estadisticas.png en proporción 1:1 original (sin reescalar ni deformar) y apoyado en la base."""
         if not os.path.exists(folder):
             return None
         candidates = [
@@ -95,17 +97,13 @@ class CharacterSpriteManager:
             fh = max_y - min_y + 1
             sub = sheet.subsurface(pygame.Rect(min_x, min_y, fw, fh)).copy()
 
-            # Escalar proporcionalmente en pixel-art para llenar el ancho del cuadro (32x32)
-            # y anclar la base del cuello/busto exactamente al borde inferior (dest_y = target_size - scaled_h)
-            scale_factor = min(target_size / float(fw), (target_size - 2) / float(fh))
-            scaled_w = max(1, min(target_size, int(round(fw * scale_factor))))
-            scaled_h = max(1, min(target_size, int(round(fh * scale_factor))))
-            if (scaled_w, scaled_h) != (fw, fh):
-                sub = pygame.transform.scale(sub, (scaled_w, scaled_h))
-
-            portrait_surf = pygame.Surface((target_size, target_size), pygame.SRCALPHA)
-            dest_x = (target_size - scaled_w) // 2
-            dest_y = target_size - scaled_h  # Apoyado exactamente en la base del recuadro para que no flote
+            # Mantener resolución 1:1 original intacta (23x19 / 23x20) en un lienzo ajustado (25x22)
+            # apoyando la base exactamente en el borde inferior (dest_y = box_h - fh) para que no flote
+            box_w = max(25, fw + 2)
+            box_h = max(22, fh + 2)
+            portrait_surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+            dest_x = (box_w - fw) // 2
+            dest_y = box_h - fh
             portrait_surf.blit(sub, (dest_x, dest_y))
             return portrait_surf
         except Exception as e:
@@ -155,14 +153,14 @@ class CharacterSpriteManager:
             # Usar FELIZ como base por defecto si algún estado faltara
             default_frames = loaded_states.get("FELIZ") or next(iter(loaded_states.values()))
             self.frames = default_frames
-            for state_key in ("FELIZ", "TRISTE", "TRAUMADO", "LOCO"):
+            for state_key in ("FELIZ", "TRISTE", "TRAUMADO", "LOCO", "DARK_WORLD"):
                 self.state_frames[state_key] = loaded_states.get(state_key, default_frames)
             return
 
         # 3. Respaldo: Personajes/New Piskel.png o procedural
         if not self._load_piskel_fallback():
             self._create_undertale_hero_sprites()
-        for state_key in ("FELIZ", "TRISTE", "TRAUMADO", "LOCO"):
+        for state_key in ("FELIZ", "TRISTE", "TRAUMADO", "LOCO", "DARK_WORLD"):
             self.state_frames[state_key] = self.frames
 
     def get_state_sprites(self, state_key):
@@ -171,7 +169,63 @@ class CharacterSpriteManager:
     def get_sprites_for_state(self, state_key):
         return self.state_frames.get(state_key, self.frames)
 
+    def _trim_single_frame(self, img, target_w=25, target_h=45):
+        """Recorta un frame individual preservando 100% el pixel-art 1:1 original con los pies en la base."""
+        w, h = img.get_size()
+        xs = [x for x in range(w) for y in range(h) if img.get_at((x, y))[3] > 0]
+        ys = [y for x in range(w) for y in range(h) if img.get_at((x, y))[3] > 0]
+        if not xs or not ys:
+            return img
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        fw = max_x - min_x + 1
+        fh = max_y - min_y + 1
+        sub = img.subsurface(pygame.Rect(min_x, min_y, fw, fh))
+        frame_w = max(target_w, fw)
+        frame_h = max(target_h, fh)
+        frame_surf = pygame.Surface((frame_w, frame_h), pygame.SRCALPHA)
+        frame_surf.blit(sub, ((frame_w - fw) // 2, frame_h - fh))
+        return frame_surf
+
     def _load_paniel_sprites_dict(self, folder):
+        all_files = sorted([
+            f for f in os.listdir(folder)
+            if f.lower().endswith(".png") and "estadistica" not in f.lower()
+        ])
+
+        # Soporte para carpetas con frames individuales numerados (como Paniel_Dark-World: Panie_dow1..4, Panie_up1..4, Paniel_Drc1..4, Paniel_Izq1..4)
+        multi_frame_groups = {
+            "DOWN": [f for f in all_files if any(k in f.lower() for k in ("dow", "adelante", "_adl", "-ad", "_ad"))],
+            "UP": [f for f in all_files if any(k in f.lower() for k in ("up", "atras"))],
+            "RIGHT": [f for f in all_files if any(k in f.lower() for k in ("drc", "-dr", "_dr", "der"))],
+            "LEFT": [f for f in all_files if "izq" in f.lower()],
+        }
+        if any(len(files) >= 2 for files in multi_frame_groups.values()):
+            loaded_multi = {}
+            for direction, flist in multi_frame_groups.items():
+                if len(flist) >= 2:
+                    dir_frames = []
+                    for fname in sorted(flist)[:4]:
+                        fpath = os.path.join(folder, fname)
+                        try:
+                            img = pygame.image.load(fpath)
+                            if pygame.display.get_surface():
+                                img = img.convert_alpha()
+                            dir_frames.append(self._trim_single_frame(img))
+                        except Exception as e:
+                            print(f"Aviso al cargar frame individual {fpath}: {e}")
+                    if dir_frames:
+                        loaded_multi[direction] = dir_frames
+            if loaded_multi:
+                if "LEFT" in loaded_multi and "RIGHT" not in loaded_multi:
+                    loaded_multi["RIGHT"] = [pygame.transform.flip(f, True, False) for f in loaded_multi["LEFT"]]
+                elif "RIGHT" in loaded_multi and "LEFT" not in loaded_multi:
+                    loaded_multi["LEFT"] = [pygame.transform.flip(f, True, False) for f in loaded_multi["RIGHT"]]
+                result = {}
+                for d in ["DOWN", "UP", "LEFT", "RIGHT"]:
+                    result[d] = loaded_multi.get(d) or loaded_multi.get("DOWN") or next(iter(loaded_multi.values()))
+                return result
+
         file_map = {
             "DOWN": "Paniel camina para adelante.png",
             "UP": "Paniel camina para atras.png",
@@ -179,10 +233,6 @@ class CharacterSpriteManager:
             "LEFT": "Paniel camina para la Izq.png",
         }
         loaded = {}
-        all_files = [
-            f for f in os.listdir(folder)
-            if f.lower().endswith(".png") and "estadistica" not in f.lower()
-        ]
         for direction, filename in file_map.items():
             path = os.path.join(folder, filename)
             if not os.path.exists(path):
@@ -390,6 +440,56 @@ class Player(WorldObject):
         self.gold = 0
         self.weapon = "Vara de Roble"
         self.armor = "Capa Gris"
+
+        # Sistema de Equipamiento estilo Deltarune (Ranura de Arma + 2 Ranuras de Armadura/Reliquia)
+        self.equipped_weapon = {
+            "name": "Vara de Roble",
+            "slot": "WEAPON",
+            "atk_bonus": 0,
+            "def_bonus": 0,
+            "desc": "Bastón de roble equilibrado. Arma inicial de Paniel (+0 ATK).",
+        }
+        self.equipped_armor_1 = {
+            "name": "Capa Gris",
+            "slot": "ARMOR",
+            "atk_bonus": 0,
+            "def_bonus": 0,
+            "desc": "Capa ligera contra el viento nocturno del cementerio (+0 DEF).",
+        }
+        self.equipped_armor_2 = {
+            "name": "Cinta Ánima",
+            "slot": "ARMOR",
+            "atk_bonus": 0,
+            "def_bonus": 0,
+            "desc": "Cinta protectora tejida con hilos de determinación (+0 DEF).",
+        }
+        self.equipment_bag = [
+            dict(self.equipped_weapon),
+            {
+                "name": "Hoja de Ánima",
+                "slot": "WEAPON",
+                "atk_bonus": 3,
+                "def_bonus": 1,
+                "desc": "Espada corta espiritual que vibra con TP. Incrementa +3 ATK y +1 DEF.",
+            },
+            dict(self.equipped_armor_1),
+            dict(self.equipped_armor_2),
+            {
+                "name": "Coraza Rúnica",
+                "slot": "ARMOR",
+                "atk_bonus": 0,
+                "def_bonus": 3,
+                "desc": "Peto grabado con la Runa Delta. Incrementa +3 de Defensa.",
+            },
+            {
+                "name": "Anillo Carmesí",
+                "slot": "ARMOR",
+                "atk_bonus": 2,
+                "def_bonus": 2,
+                "desc": "Reliquia del cementerio antiguo. Incrementa +2 de Ataque y +2 de Defensa.",
+            },
+        ]
+
         self.inventory = [
             {"name": "Caramelo Oscuro", "heal": 10, "sanity_heal": 5, "desc": "Restaura 10 HP y 5% cordura con sabor a mora."},
             {"name": "Tarta de Caramelo", "heal": 20, "sanity_heal": 15, "desc": "Restaura todo el HP con amor maternal."},
@@ -401,6 +501,7 @@ class Player(WorldObject):
         self.sanity = 100.0   # 0.0 (Locura total) a 100.0 (Plena cordura / Feliz)
         self.death_count = 0  # Contador de muertes del que Paniel es plenamente consciente
         self.last_death_acknowledged = 0
+        self.in_dark_world = False
 
     @property
     def mental_state(self):
@@ -416,7 +517,9 @@ class Player(WorldObject):
 
     @property
     def sprites(self):
-        """Retorna automáticamente los sprites de movimiento correspondientes al estado mental actual."""
+        """Retorna automáticamente los diseños de Paniel_Dark-World al estar en el Dark World, o los de su estado mental."""
+        if getattr(self, "in_dark_world", False) and "DARK_WORLD" in self.state_sprites and self.state_sprites["DARK_WORLD"].get("DOWN"):
+            return self.state_sprites["DARK_WORLD"]
         state = self.mental_state
         if state in self.state_sprites and self.state_sprites[state].get("DOWN"):
             return self.state_sprites[state]
@@ -471,6 +574,83 @@ class Player(WorldObject):
         elif state == "LOCO":
             return self.run_speed + 28.0
         return self.run_speed
+
+    def sync_equipment_bag(self):
+        """Sincroniza cualquier arma/armadura del inventario general hacia la bolsa de equipamiento."""
+        known_names = {g["name"] for g in self.equipment_bag}
+        for it in self.inventory:
+            if (it.get("atk_bonus") or it.get("def_bonus") or it.get("slot")) and it["name"] not in known_names:
+                slot = it.get("slot", "BOTH" if it["name"] == "Sturdy Arm" else ("WEAPON" if it.get("atk_bonus", 0) >= it.get("def_bonus", 0) else "ARMOR"))
+                self.equipment_bag.append({
+                    "name": it["name"],
+                    "slot": slot,
+                    "atk_bonus": it.get("atk_bonus", 0),
+                    "def_bonus": it.get("def_bonus", 0),
+                    "desc": it.get("desc", ""),
+                })
+                known_names.add(it["name"])
+        if getattr(self, "sturdy_arm_equipped", False) and "Sturdy Arm" not in known_names:
+            sturdy = {
+                "name": "Sturdy Arm",
+                "slot": "BOTH",
+                "atk_bonus": 5,
+                "def_bonus": 10,
+                "desc": "¿Refuerzo robótico o mágico? de brazo. Incrementa +5 de Ataque y +10 de Defensa.",
+            }
+            self.equipment_bag.append(sturdy)
+
+    def get_slot_gear(self, slot_idx):
+        if slot_idx == 0:
+            return self.equipped_weapon
+        elif slot_idx == 1:
+            return self.equipped_armor_1
+        return self.equipped_armor_2
+
+    def get_candidates_for_slot(self, slot_idx):
+        """Retorna las armas (slot_idx=0) o armaduras/reliquias (slot_idx=1,2) disponibles para equipar."""
+        self.sync_equipment_bag()
+        want = "WEAPON" if slot_idx == 0 else "ARMOR"
+        other_armor = self.equipped_armor_2 if slot_idx == 1 else (self.equipped_armor_1 if slot_idx == 2 else None)
+        candidates = []
+        for g in self.equipment_bag:
+            if g.get("slot") in (want, "BOTH"):
+                if other_armor and g["name"] == other_armor.get("name") and g["name"] != "Sturdy Arm":
+                    continue
+                candidates.append(g)
+        return candidates
+
+    def equip_in_slot(self, slot_idx, gear_item):
+        """Equipa un arma o armadura en la ranura indicada (0: Arma, 1: Armadura 1, 2: Armadura 2) y actualiza ATK y DEF."""
+        self.sync_equipment_bag()
+        if all(g["name"] != gear_item["name"] for g in self.equipment_bag):
+            self.equipment_bag.append(dict(gear_item))
+
+        old_gear = self.get_slot_gear(slot_idx)
+        old_atk = old_gear.get("atk_bonus", 0) if old_gear else 0
+        old_def = old_gear.get("def_bonus", 0) if old_gear else 0
+
+        new_atk = gear_item.get("atk_bonus", 0)
+        new_def = gear_item.get("def_bonus", 0)
+
+        self.attack = max(1, self.attack - old_atk + new_atk)
+        self.defense = max(0, self.defense - old_def + new_def)
+
+        if slot_idx == 0:
+            self.equipped_weapon = dict(gear_item)
+        elif slot_idx == 1:
+            self.equipped_armor_1 = dict(gear_item)
+        else:
+            self.equipped_armor_2 = dict(gear_item)
+
+        self.sturdy_arm_equipped = any(
+            s and s.get("name") == "Sturdy Arm"
+            for s in (self.equipped_weapon, self.equipped_armor_1, self.equipped_armor_2)
+        )
+
+        self.weapon = self.equipped_weapon["name"] if self.equipped_weapon else "Ninguna"
+        a1 = self.equipped_armor_1["name"] if self.equipped_armor_1 else "Ninguna"
+        a2 = self.equipped_armor_2["name"] if self.equipped_armor_2 else ""
+        self.armor = f"{a1} / {a2}" if a2 else a1
 
     def modify_sanity(self, delta):
         """Aumenta o reduce la cordura asegurando límites entre 0 y 100."""

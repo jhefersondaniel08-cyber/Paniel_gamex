@@ -26,7 +26,32 @@ class DialogueBox:
         self.box_rect = pygame.Rect(14, VIRTUAL_HEIGHT - 86, VIRTUAL_WIDTH - 28, 76)
 
     def start_dialogue(self, lines):
-        self.lines = lines
+        if isinstance(lines, str):
+            raw_list = [lines]
+        else:
+            raw_list = list(lines or [])
+
+        # Dividir saltos de línea y paginar automáticamente en bloques de máximo 3 líneas envueltas
+        # para que ningún cartel largo quede escribiendo fuera de la caja ni bloquee el diálogo
+        paginated = []
+        max_w = self.box_rect.width - 68
+        for entry in raw_list:
+            for subline in str(entry).split("\n"):
+                subline = subline.strip()
+                if not subline:
+                    continue
+                wrapped = self.wrap_text(subline, max_width=max_w)
+                if len(wrapped) <= 3:
+                    paginated.append(subline)
+                else:
+                    for i in range(0, len(wrapped), 3):
+                        chunk = " ".join(wrapped[i:i + 3])
+                        paginated.append(chunk)
+
+        if not paginated:
+            paginated = ["* ..."]
+
+        self.lines = paginated
         self.current_line_idx = 0
         self.displayed_text = ""
         self.char_idx = 0
@@ -96,25 +121,26 @@ class DialogueBox:
         if not self.active:
             return
 
-        # Fondo negro de la caja con doble marco estilo Deltarune
+        # Fondo negro de la caja con doble marco más grueso estilo Deltarune
         pygame.draw.rect(surface, COLOR_BLACK, self.box_rect)
-        pygame.draw.rect(surface, (110, 65, 210), self.box_rect.inflate(2, 2), 1)
-        pygame.draw.rect(surface, COLOR_WHITE, self.box_rect, 2)
+        pygame.draw.rect(surface, (110, 65, 210), self.box_rect.inflate(4, 4), 2)
+        pygame.draw.rect(surface, COLOR_WHITE, self.box_rect, 4)
         inner = self.box_rect.inflate(-6, -6)
-        pygame.draw.rect(surface, (55, 45, 90), inner, 1)
+        pygame.draw.rect(surface, (55, 45, 90), inner, 2)
 
         prev_clip = surface.get_clip()
         surface.set_clip(inner)
 
-        # Si hay retrato de Paniel disponible, mostrarlo ajustado y apoyado en la base del marco
+        # Si hay retrato de Paniel disponible, mostrarlo 1:1 sin deformar y apoyado en la base de su marco
         portrait = player.get_stat_portrait() if (player is not None and hasattr(player, "get_stat_portrait")) else None
         if portrait is not None:
-            p_box = pygame.Rect(self.box_rect.x + 10, self.box_rect.y + 10, 34, 34)
+            pw, ph = portrait.get_size()
+            p_box = pygame.Rect(self.box_rect.x + 10, self.box_rect.y + 12, pw + 2, ph + 2)
             pygame.draw.rect(surface, (18, 20, 32), p_box, border_radius=2)
             surface.blit(portrait, (p_box.x + 1, p_box.y + 1))
             pygame.draw.rect(surface, (120, 100, 190), p_box, 1, border_radius=2)
-            text_x = self.box_rect.x + 52
-            max_width = self.box_rect.width - 66
+            text_x = p_box.right + 10
+            max_width = self.box_rect.width - (p_box.width + 24)
         else:
             self._draw_soul(surface, self.box_rect.x + 12, self.box_rect.y + 12)
             text_x = self.box_rect.x + 28
@@ -291,13 +317,14 @@ class PanielMentalHUD:
         return surf
 
     def get_face(self, state, t, player=None):
-        """Obtiene el retrato desde Estadisticas.png del estado mental actual (o respaldo procedural)."""
+        """Obtiene el retrato 1:1 desde Estadisticas.png del estado mental actual (o respaldo procedural)."""
         if player is not None and hasattr(player, "stat_portraits") and state in player.stat_portraits:
             portrait = player.stat_portraits[state]
             if portrait is not None:
                 if state == "LOCO":
-                    shake_x = int(math.sin(t * 26.0) * 1.5)
-                    surf = pygame.Surface((32, 32), pygame.SRCALPHA)
+                    shake_x = int(math.sin(t * 26.0) * 1.0)
+                    pw, ph = portrait.get_size()
+                    surf = pygame.Surface((pw, ph), pygame.SRCALPHA)
                     surf.blit(portrait, (shake_x, 0))
                     return surf
                 return portrait
@@ -323,9 +350,10 @@ class PanielMentalHUD:
         border_width = 2 if state == "LOCO" else 1
         pygame.draw.rect(surface, state_color, (box_x, box_y, box_w, box_h), border_width, border_radius=3)
 
-        # 1. Rostro de Paniel (32x32 ajustado al marco 34x34 y apoyado en la base sin flotar)
+        # 1. Rostro de Paniel 1:1 original (sin deformar) en un marco ajustado a su tamaño exacto y apoyado en la base
         face = self.get_face(state, self.anim_time, player=player)
-        face_frame = pygame.Rect(box_x + 4, box_y + 4, 34, 34)
+        fw, fh = face.get_size()
+        face_frame = pygame.Rect(box_x + 7, box_y + 9, fw + 2, fh + 2)
         pygame.draw.rect(surface, (40, 45, 60), face_frame, border_radius=2)
         surface.blit(face, (face_frame.x + 1, face_frame.y + 1))
         pygame.draw.rect(surface, state_color, face_frame, 1, border_radius=2)
@@ -456,13 +484,15 @@ class UndertaleMenu:
         self.sound_fx = sound_fx
         self.active = False
 
-        self.main_options = ["ITEM", "STAT", "MENTE"]
+        self.main_options = ["ITEM", "EQUIP", "STAT", "MENTE"]
         self.main_idx = 0
-        self.state = "MAIN"  # MAIN, SUBMENU_ITEM, SUBMENU_ITEM_ACTION, ITEM_MESSAGE, SUBMENU_STAT, SUBMENU_MENTE
+        self.state = "MAIN"  # MAIN, SUBMENU_ITEM, SUBMENU_ITEM_ACTION, ITEM_MESSAGE, SUBMENU_EQUIP_SLOT, SUBMENU_EQUIP_LIST, SUBMENU_STAT, SUBMENU_MENTE
 
         self.item_idx = 0
         self.action_idx = 0  # 0: USAR, 1: INFO, 2: TIRAR
         self.action_options = ["USAR", "INFO", "TIRAR"]
+        self.equip_slot_idx = 0  # 0: ARMA, 1: ARMADURA 1, 2: ARMADURA 2
+        self.equip_list_idx = 0
         self.msg_lines = []
         self.anim_time = 0.0
 
@@ -518,7 +548,7 @@ class UndertaleMenu:
         if not self.active or event.type != pygame.KEYDOWN:
             return
 
-        # 1. Menú Principal Izquierdo [ITEM, STAT, MENTE]
+        # 1. Menú Principal Izquierdo [ITEM, EQUIP, STAT, MENTE]
         if self.state == "MAIN":
             if event.key in [pygame.K_UP, pygame.K_w]:
                 self.main_idx = (self.main_idx - 1) % len(self.main_options)
@@ -528,15 +558,66 @@ class UndertaleMenu:
                 self.sound_fx.play_select()
             elif event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
                 self.sound_fx.play_select()
-                if self.main_idx == 0:
+                opt_name = self.main_options[self.main_idx]
+                if opt_name == "ITEM":
                     self.state = "SUBMENU_ITEM"
                     self.item_idx = 0
-                elif self.main_idx == 1:
+                elif opt_name == "EQUIP":
+                    if hasattr(player, "sync_equipment_bag"):
+                        player.sync_equipment_bag()
+                    self.state = "SUBMENU_EQUIP_SLOT"
+                    self.equip_slot_idx = 0
+                    self.equip_list_idx = 0
+                elif opt_name == "STAT":
                     self.state = "SUBMENU_STAT"
-                elif self.main_idx == 2:
+                elif opt_name == "MENTE":
                     self.state = "SUBMENU_MENTE"
             elif event.key in [pygame.K_x, pygame.K_c, pygame.K_ESCAPE]:
                 self.close()
+
+        # 1.5 Submenú EQUIPAMIENTO estilo Deltarune (Selección de Ranura: ARMA, ARMADURA 1, ARMADURA 2)
+        elif self.state == "SUBMENU_EQUIP_SLOT":
+            if event.key in [pygame.K_UP, pygame.K_w]:
+                self.equip_slot_idx = (self.equip_slot_idx - 1) % 3
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_DOWN, pygame.K_s]:
+                self.equip_slot_idx = (self.equip_slot_idx + 1) % 3
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
+                candidates = player.get_candidates_for_slot(self.equip_slot_idx) if hasattr(player, "get_candidates_for_slot") else []
+                if candidates:
+                    self.state = "SUBMENU_EQUIP_LIST"
+                    curr_g = player.get_slot_gear(self.equip_slot_idx)
+                    self.equip_list_idx = 0
+                    for ci, cg in enumerate(candidates):
+                        if curr_g and cg["name"] == curr_g.get("name"):
+                            self.equip_list_idx = ci
+                            break
+                    self.sound_fx.play_select()
+            elif event.key in [pygame.K_x, pygame.K_c, pygame.K_ESCAPE]:
+                self.state = "MAIN"
+                self.sound_fx.play_select()
+
+        # 1.6 Submenú EQUIPAMIENTO estilo Deltarune (Lista de Armas o Armaduras para la ranura elegida)
+        elif self.state == "SUBMENU_EQUIP_LIST":
+            candidates = player.get_candidates_for_slot(self.equip_slot_idx) if hasattr(player, "get_candidates_for_slot") else []
+            if not candidates:
+                self.state = "SUBMENU_EQUIP_SLOT"
+                return
+            if event.key in [pygame.K_UP, pygame.K_w]:
+                self.equip_list_idx = (self.equip_list_idx - 1) % len(candidates)
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_DOWN, pygame.K_s]:
+                self.equip_list_idx = (self.equip_list_idx + 1) % len(candidates)
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
+                chosen = candidates[self.equip_list_idx]
+                player.equip_in_slot(self.equip_slot_idx, chosen)
+                self.sound_fx.play_heal()
+                self.state = "SUBMENU_EQUIP_SLOT"
+            elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
+                self.state = "SUBMENU_EQUIP_SLOT"
+                self.sound_fx.play_select()
 
         # 2. Submenú STATS
         elif self.state == "SUBMENU_STAT":
@@ -581,21 +662,45 @@ class UndertaleMenu:
 
                 item = player.inventory[self.item_idx]
 
-                if self.action_idx == 0:  # USAR
-                    player.inventory.pop(self.item_idx)
-                    heal = item.get("heal", 0)
-                    san_heal = item.get("sanity_heal", 0)
-                    player.hp = min(player.max_hp, player.hp + heal)
-                    if san_heal > 0:
-                        player.modify_sanity(san_heal)
-                    self.sound_fx.play_heal()
-                    lines = [f"* Usaste {item['name']}."]
-                    if heal > 0:
-                        lines.append(f"* ¡Recuperaste {heal} HP! ({player.hp}/{player.max_hp})")
-                    if san_heal > 0:
-                        lines.append(f"* ¡Tu mente se siente más tranquila (+{san_heal}% cordura)!")
-                    self.msg_lines = lines
-                    self.state = "ITEM_MESSAGE"
+                if self.action_idx == 0:  # USAR / EQUIPAR
+                    if item.get("atk_bonus") or item.get("def_bonus"):
+                        if hasattr(player, "equip_in_slot"):
+                            slot_t = 0 if item.get("atk_bonus", 0) >= item.get("def_bonus", 0) or item["name"] == "Sturdy Arm" else 1
+                            player.equip_in_slot(slot_t, {
+                                "name": item["name"],
+                                "slot": "BOTH" if item["name"] == "Sturdy Arm" else ("WEAPON" if slot_t == 0 else "ARMOR"),
+                                "atk_bonus": item.get("atk_bonus", 0),
+                                "def_bonus": item.get("def_bonus", 0),
+                                "desc": item.get("desc", ""),
+                            })
+                        elif not getattr(player, "sturdy_arm_equipped", False):
+                            player.sturdy_arm_equipped = True
+                            player.attack += item.get("atk_bonus", 0)
+                            player.defense += item.get("def_bonus", 0)
+                            player.weapon = item["name"]
+                            player.armor = f"{item['name']} (+10 DEF)"
+                        self.sound_fx.play_heal()
+                        self.msg_lines = [
+                            f"* ¡Equipaste {item['name']}!",
+                            f"* \"{item.get('desc', '')}\"",
+                            f"* (Estadísticas actuales: ATK {player.effective_attack} | DEF {player.effective_defense})",
+                        ]
+                        self.state = "ITEM_MESSAGE"
+                    else:
+                        player.inventory.pop(self.item_idx)
+                        heal = item.get("heal", 0)
+                        san_heal = item.get("sanity_heal", 0)
+                        player.hp = min(player.max_hp, player.hp + heal)
+                        if san_heal > 0:
+                            player.modify_sanity(san_heal)
+                        self.sound_fx.play_heal()
+                        lines = [f"* Usaste {item['name']}."]
+                        if heal > 0:
+                            lines.append(f"* ¡Recuperaste {heal} HP! ({player.hp}/{player.max_hp})")
+                        if san_heal > 0:
+                            lines.append(f"* ¡Tu mente se siente más tranquila (+{san_heal}% cordura)!")
+                        self.msg_lines = lines
+                        self.state = "ITEM_MESSAGE"
 
                 elif self.action_idx == 1:  # INFO
                     self.sound_fx.play_select()
@@ -641,50 +746,171 @@ class UndertaleMenu:
         dark_overlay.fill((0, 0, 0, 110))
         surface.blit(dark_overlay, (0, 0))
 
-        # 1. Caja de Opciones Izquierda (ITEM, STAT, MENTE)
-        box_menu = pygame.Rect(24, 45, 76, 82)
+        # 1. Caja de Opciones Izquierda (ITEM, EQUIP, STAT, MENTE)
+        box_menu = pygame.Rect(22, 34, 80, 102)
         pygame.draw.rect(surface, (0, 0, 0), box_menu)
-        pygame.draw.rect(surface, (255, 255, 255), box_menu, 2)
+        pygame.draw.rect(surface, (255, 255, 255), box_menu, 3)
 
         for i, opt in enumerate(self.main_options):
-            txt = self.font_hud.render(opt, False, (255, 255, 255))
-            surface.blit(txt, (box_menu.x + 24, box_menu.y + 12 + i * 22))
+            is_sel = (i == self.main_idx)
+            col = (255, 240, 90) if (is_sel and self.state != "MAIN") else (255, 255, 255)
+            txt = self.font_hud.render(opt, False, col)
+            surface.blit(txt, (box_menu.x + 22, box_menu.y + 10 + i * 21))
 
         # Alma indicadora en el menú principal
         if self.state == "MAIN":
-            self._draw_soul(surface, box_menu.x + 8, box_menu.y + 13 + self.main_idx * 22)
+            self._draw_soul(surface, box_menu.x + 7, box_menu.y + 11 + self.main_idx * 21)
 
         # 2. Caja Mini-Status Izquierda (debajo del menú)
-        box_mini = pygame.Rect(24, 135, 76, 78)
+        box_mini = pygame.Rect(22, 142, 80, 78)
         pygame.draw.rect(surface, (0, 0, 0), box_mini)
-        pygame.draw.rect(surface, (255, 255, 255), box_mini, 2)
+        pygame.draw.rect(surface, (255, 255, 255), box_mini, 3)
 
         name_s = self.font_hud.render("PANIEL", False, (255, 255, 255))
         lv_s = self.font_small.render(f"LV  {player.lv}", False, (255, 220, 80))
         hp_s = self.font_small.render(f"HP  {player.hp}/{player.max_hp}", False, (255, 255, 255))
-        g_s = self.font_small.render(f"G   {player.gold}", False, (255, 230, 90))
+        g_s = self.font_small.render(f"D$  {player.gold}", False, (255, 230, 90))
 
         surface.blit(name_s, (box_mini.x + 8, box_mini.y + 8))
         surface.blit(lv_s, (box_mini.x + 8, box_mini.y + 24))
         surface.blit(hp_s, (box_mini.x + 8, box_mini.y + 40))
         surface.blit(g_s, (box_mini.x + 8, box_mini.y + 56))
 
-        # 3. Ventana Derecha de Submenú (se abre al elegir STAT, ITEM o MENTE)
+        # 3. Ventana Derecha de Submenú (se abre al elegir EQUIP, STAT, ITEM o MENTE)
         if self.state != "MAIN":
-            box_sub = pygame.Rect(106, 34, 280, 232)
+            box_sub = pygame.Rect(106, 26, 282, 246)
             pygame.draw.rect(surface, (0, 0, 0), box_sub)
-            pygame.draw.rect(surface, (255, 255, 255), box_sub, 2)
+            pygame.draw.rect(surface, (255, 255, 255), box_sub, 3)
+
+            # A-0) SUBMENÚ DE EQUIPAMIENTO ESTILO DELTARUNE (EQUIP: Armas y Armaduras)
+            if self.state in ("SUBMENU_EQUIP_SLOT", "SUBMENU_EQUIP_LIST"):
+                pygame.draw.rect(surface, (75, 110, 185), box_sub.inflate(-6, -6), 1)
+                hdr = self.font_hud.render("★ EQUIPAMIENTO DE PANIEL ★", False, (100, 235, 255))
+                surface.blit(hdr, (box_sub.x + 10, box_sub.y + 7))
+
+                # 1) BLOQUE SUPERIOR ORGANIZADO: Caja de 3 Ranuras (Izquierda) + Marco de Retrato 1:1 (Derecha)
+                slots_pane = pygame.Rect(box_sub.x + 8, box_sub.y + 23, 218, 60)
+                port_pane = pygame.Rect(box_sub.x + 230, box_sub.y + 23, 44, 60)
+                pygame.draw.rect(surface, (14, 16, 30), slots_pane, border_radius=3)
+                pygame.draw.rect(surface, (95, 225, 255) if self.state == "SUBMENU_EQUIP_SLOT" else (65, 95, 160), slots_pane, 1, border_radius=3)
+                pygame.draw.rect(surface, (14, 16, 30), port_pane, border_radius=3)
+                pygame.draw.rect(surface, (65, 95, 160), port_pane, 1, border_radius=3)
+
+                state = player.mental_state
+                state_col = mental_hud.STATE_COLORS.get(state, (255, 255, 255))
+                eq_face = mental_hud.get_face(state, self.anim_time, player=player)
+                efw, efh = eq_face.get_size()
+                eq_frame = pygame.Rect(port_pane.centerx - (efw + 2) // 2, port_pane.y + 8, efw + 2, efh + 2)
+                pygame.draw.rect(surface, (35, 40, 58), eq_frame, border_radius=2)
+                surface.blit(eq_face, (eq_frame.x + 1, eq_frame.y + 1))
+                pygame.draw.rect(surface, state_col, eq_frame, 1, border_radius=2)
+                lv_tag_s = self.font_small.render(f"LV {player.lv}", False, (255, 225, 85))
+                surface.blit(lv_tag_s, (port_pane.centerx - lv_tag_s.get_width() // 2, port_pane.bottom - 16))
+
+                slot_labels = ["ARMA   :", "ARMAD.1:", "ARMAD.2:"]
+                slot_colors = [(255, 145, 90), (110, 225, 255), (165, 250, 155)]
+                for si in range(3):
+                    sy = slots_pane.y + 5 + si * 18
+                    is_slot_sel = (si == self.equip_slot_idx)
+                    g_obj = player.get_slot_gear(si) if hasattr(player, "get_slot_gear") else None
+                    g_name = g_obj["name"] if g_obj else "(Vacío)"
+                    lbl_col = (255, 240, 85) if is_slot_sel else slot_colors[si]
+                    val_col = (255, 245, 110) if is_slot_sel else (240, 245, 255)
+
+                    ix, iy = slots_pane.x + 18, sy + 2
+                    if si == 0:
+                        pygame.draw.line(surface, lbl_col, (ix, iy + 8), (ix + 8, iy), 2)
+                        pygame.draw.line(surface, (255, 255, 255), (ix + 1, iy + 5), (ix + 5, iy + 9), 1)
+                    else:
+                        pygame.draw.polygon(surface, lbl_col, [(ix + 4, iy), (ix + 8, iy + 2), (ix + 7, iy + 7), (ix + 4, iy + 9), (ix + 1, iy + 7), (ix, iy + 2)], 1)
+
+                    ls = self.font_small.render(slot_labels[si], False, lbl_col)
+                    vs = self.font_small.render(g_name, False, val_col)
+                    surface.blit(ls, (slots_pane.x + 30, sy + 1))
+                    surface.blit(vs, (slots_pane.x + 86, sy + 1))
+
+                    if is_slot_sel and self.state == "SUBMENU_EQUIP_SLOT":
+                        self._draw_soul(surface, slots_pane.x + 5, sy + 1)
+
+                # 2) BLOQUE CENTRAL DIVIDIDO: Estadísticas en Vivo (Izquierda) y Bolsa de Equipo (Derecha)
+                stat_pane = pygame.Rect(box_sub.x + 8, box_sub.y + 87, 116, 102)
+                list_pane = pygame.Rect(box_sub.x + 128, box_sub.y + 87, 146, 102)
+                pygame.draw.rect(surface, (14, 16, 30), stat_pane, border_radius=3)
+                pygame.draw.rect(surface, (65, 95, 160), stat_pane, 1, border_radius=3)
+                pygame.draw.rect(surface, (14, 16, 30), list_pane, border_radius=3)
+                pygame.draw.rect(surface, (95, 225, 255) if self.state == "SUBMENU_EQUIP_LIST" else (65, 95, 160), list_pane, 1, border_radius=3)
+                pygame.draw.line(surface, (45, 65, 115), (stat_pane.x + 6, stat_pane.y + 20), (stat_pane.right - 6, stat_pane.y + 20), 1)
+                pygame.draw.line(surface, (45, 65, 115), (list_pane.x + 6, list_pane.y + 20), (list_pane.right - 6, list_pane.y + 20), 1)
+
+                candidates = player.get_candidates_for_slot(self.equip_slot_idx) if hasattr(player, "get_candidates_for_slot") else []
+                curr_gear = player.get_slot_gear(self.equip_slot_idx) if hasattr(player, "get_slot_gear") else None
+                preview_gear = candidates[self.equip_list_idx] if (self.state == "SUBMENU_EQUIP_LIST" and candidates and self.equip_list_idx < len(candidates)) else curr_gear
+
+                cur_atk = player.effective_attack
+                cur_def = player.effective_defense
+                old_a = curr_gear.get("atk_bonus", 0) if curr_gear else 0
+                old_d = curr_gear.get("def_bonus", 0) if curr_gear else 0
+                new_a = preview_gear.get("atk_bonus", 0) if preview_gear else old_a
+                new_d = preview_gear.get("def_bonus", 0) if preview_gear else old_d
+                prv_atk = max(1, cur_atk - old_a + new_a)
+                prv_def = max(0, cur_def - old_d + new_d)
+
+                shdr = self.font_small.render("ESTADÍSTICAS", False, (255, 225, 95))
+                surface.blit(shdr, (stat_pane.x + 8, stat_pane.y + 5))
+
+                a_col = (100, 255, 140) if prv_atk > cur_atk else ((255, 95, 95) if prv_atk < cur_atk else (235, 240, 255))
+                a_str = f"ATK : {cur_atk} -> {prv_atk}" if self.state == "SUBMENU_EQUIP_LIST" else f"ATK : {cur_atk}"
+                surface.blit(self.font_small.render(a_str, False, a_col), (stat_pane.x + 8, stat_pane.y + 26))
+
+                d_col = (95, 235, 255) if prv_def > cur_def else ((255, 95, 95) if prv_def < cur_def else (235, 240, 255))
+                d_str = f"DEF : {cur_def} -> {prv_def}" if self.state == "SUBMENU_EQUIP_LIST" else f"DEF : {cur_def}"
+                surface.blit(self.font_small.render(d_str, False, d_col), (stat_pane.x + 8, stat_pane.y + 44))
+
+                surface.blit(self.font_small.render(f"HP  : {player.hp}/{player.max_hp}", False, (235, 240, 255)), (stat_pane.x + 8, stat_pane.y + 62))
+                surface.blit(self.font_small.render(f"EST : {state}", False, state_col), (stat_pane.x + 8, stat_pane.y + 80))
+
+                lhdr_txt = "ARMAS DISP." if self.equip_slot_idx == 0 else "ARMADURAS DISP."
+                surface.blit(self.font_small.render(lhdr_txt, False, (120, 230, 255)), (list_pane.x + 8, list_pane.y + 5))
+
+                start_ci = max(0, min(self.equip_list_idx - 1, max(0, len(candidates) - 4)))
+                for row_i, ci in enumerate(range(start_ci, min(len(candidates), start_ci + 4))):
+                    cg = candidates[ci]
+                    cy_it = list_pane.y + 25 + row_i * 18
+                    is_c_sel = (ci == self.equip_list_idx and self.state == "SUBMENU_EQUIP_LIST")
+                    is_equipped = (curr_gear and cg["name"] == curr_gear.get("name"))
+                    c_col = (255, 240, 85) if is_c_sel else ((110, 255, 160) if is_equipped else (215, 225, 245))
+                    c_surf = self.font_small.render(cg["name"], False, c_col)
+                    surface.blit(c_surf, (list_pane.x + 20, cy_it))
+                    if is_equipped:
+                        eq_badge = self.font_small.render("[E]", False, (110, 255, 160))
+                        surface.blit(eq_badge, (list_pane.right - eq_badge.get_width() - 6, cy_it))
+                    if is_c_sel:
+                        self._draw_soul(surface, list_pane.x + 6, cy_it)
+
+                # 3) BLOQUE INFERIOR DE DESCRIPCIÓN Y CONTROLES
+                desc_box = pygame.Rect(box_sub.x + 8, box_sub.y + 193, 266, 45)
+                pygame.draw.rect(surface, (10, 12, 24), desc_box, border_radius=3)
+                pygame.draw.rect(surface, (70, 95, 155), desc_box, 1, border_radius=3)
+                active_gear = preview_gear if preview_gear else curr_gear
+                desc_str = active_gear.get("desc", "Selecciona una pieza de equipo.") if active_gear else "Ranura vacía."
+                dy_eq = desc_box.y + 5
+                for dl in self.wrap_text(desc_str, self.font_small, desc_box.width - 14)[:2]:
+                    surface.blit(self.font_small.render(dl, False, (205, 230, 255)), (desc_box.x + 7, dy_eq))
+                    dy_eq += 12
+                hint_eq = "[Z] Equipar  [X] Ranuras" if self.state == "SUBMENU_EQUIP_LIST" else "[Z] Cambiar Equipo  [X] Volver"
+                surface.blit(self.font_small.render(hint_eq, False, (255, 230, 90)), (desc_box.x + 7, desc_box.bottom - 13))
 
             # A) SUBMENÚ DE ESTADÍSTICAS (STAT)
             if self.state == "SUBMENU_STAT":
                 title_s = self.font_hud.render('"PANIEL"', False, (255, 255, 255))
                 surface.blit(title_s, (box_sub.x + 14, box_sub.y + 10))
 
-                # Retrato de Estadisticas.png en la esquina superior derecha del panel STAT
+                # Retrato 1:1 de Estadisticas.png en la esquina superior derecha del panel STAT
                 state = player.mental_state
                 state_col = mental_hud.STATE_COLORS.get(state, (255, 255, 255))
                 stat_face = mental_hud.get_face(state, self.anim_time, player=player)
-                stat_frame = pygame.Rect(box_sub.right - 44, box_sub.y + 8, 34, 34)
+                sfw, sfh = stat_face.get_size()
+                stat_frame = pygame.Rect(box_sub.right - sfw - 14, box_sub.y + 10, sfw + 2, sfh + 2)
                 pygame.draw.rect(surface, (40, 45, 60), stat_frame, border_radius=2)
                 surface.blit(stat_face, (stat_frame.x + 1, stat_frame.y + 1))
                 pygame.draw.rect(surface, state_col, stat_frame, 1, border_radius=2)
@@ -855,12 +1081,13 @@ class UndertaleMenu:
                 state = player.mental_state
                 state_col = mental_hud.STATE_COLORS.get(state, (255, 255, 255))
 
-                # Rostro de Paniel desde Estadisticas.png ajustado a su marco (34x34) y apoyado en la base
+                # Rostro 1:1 de Paniel desde Estadisticas.png en su marco exacto y apoyado en la base
                 face = mental_hud.get_face(state, self.anim_time, player=player)
-                mente_frame = pygame.Rect(box_sub.x + 16, box_sub.y + 28, 34, 34)
-                pygame.draw.rect(surface, (40, 45, 60), mente_frame, border_radius=3)
+                mfw, mfh = face.get_size()
+                mente_frame = pygame.Rect(box_sub.x + 16, box_sub.y + 32, mfw + 2, mfh + 2)
+                pygame.draw.rect(surface, (40, 45, 60), mente_frame, border_radius=2)
                 surface.blit(face, (mente_frame.x + 1, mente_frame.y + 1))
-                pygame.draw.rect(surface, state_col, mente_frame, 1, border_radius=3)
+                pygame.draw.rect(surface, state_col, mente_frame, 1, border_radius=2)
 
                 # Etiqueta de estado y cordura
                 lbl_state = self.font_hud.render(f"Estado: {state}", False, state_col)
@@ -1235,8 +1462,8 @@ class DeltaruneTitleScreen:
         # Emblema Delta Rune superior
         self._draw_delta_emblem(surface, cx, 42, scale=1.25, color=(190, 225, 255))
 
-        # Título principal "P A N I E L" con resplandor estilo Deltarune
-        title_text = "P A N I E L"
+        # Título principal "U N D E R B R E A D" con resplandor estilo Deltarune
+        title_text = "U N D E R B R E A D"
         glow_offset = int(math.sin(self.timer * 3.0) * 1.5)
         t_shadow = self.font_title.render(title_text, False, (25, 50, 110))
         t_glow = self.font_title.render(title_text, False, (100, 180, 255))
@@ -1248,8 +1475,8 @@ class DeltaruneTitleScreen:
         surface.blit(t_main, (tx, ty))
 
         # Línea divisoria y subtítulo
-        pygame.draw.line(surface, (110, 175, 255), (cx - 95, 100), (cx + 95, 100), 1)
-        sub_s = self.font_sub.render("— EL CEMENTERIO —", False, (185, 215, 255))
+        pygame.draw.line(surface, (110, 175, 255), (cx - 115, 100), (cx + 115, 100), 1)
+        sub_s = self.font_sub.render("— SOMBRAS Y DARK WORLD —", False, (185, 215, 255))
         surface.blit(sub_s, ((VIRTUAL_WIDTH - sub_s.get_width()) // 2, 106))
 
         # Sprite de Paniel mirando hacia la Fuente Oscura
@@ -1316,5 +1543,683 @@ class DeltaruneTitleScreen:
             fade_s = pygame.Surface((VIRTUAL_WIDTH, VIRTUAL_HEIGHT), pygame.SRCALPHA)
             fade_s.fill((0, 0, 0, int(self.fade_alpha)))
             surface.blit(fade_s, (0, 0))
+
+
+# ==========================================================
+# MENÚ DE TIENDA DINÁMICO ESTILO DELTARUNE (BAZAR DEL DARK WORLD)
+# ==========================================================
+class DeltaruneShopMenu:
+    """Interfaz de tienda interactiva y animada al estilo Deltarune (Seam / Rouxls / Swatch / Spamton):
+    - Escenario superior (400x158) con fondo neón animado, estanterías de reliquias y retrato grande
+      del Vendedor del Dark World con expresiones faciales, gafas neón animadas y movimiento de boca al hablar.
+    - Paneles inferiores divididos con bordes gruesos estilo Deltarune:
+      * Menú principal: COMPRAR, VENDER, HABLAR, SALIR + diálogo vivo del vendedor.
+      * Submenú COMPRAR: Catálogo con 'Sturdy Arm' (+5 ATK, +10 DEF) y consumibles del Dark World,
+        más panel lateral dinámico con comparación de estadísticas de Paniel en tiempo real.
+      * Submenú VENDER: Venta de objetos del inventario por D$.
+      * Submenú HABLAR: Temas de conversación con animaciones y reacciones del vendedor.
+    """
+    def __init__(self, font_hud, font_small, font_dialogue, sound_fx):
+        self.font_hud = font_hud
+        self.font_small = font_small
+        self.font_dialogue = font_dialogue
+        self.sound_fx = sound_fx
+
+        self.active = False
+        self.vendor_npc = None
+        self.state = "MAIN"  # MAIN, BUY, SELL, TALK, TALK_DIALOGUE
+        self.main_options = ["COMPRAR", "VENDER", "HABLAR", "SALIR"]
+        self.main_idx = 0
+        self.sub_idx = 0
+
+        self.anim_time = 0.0
+        self.expression = "WELCOME"  # WELCOME, SMUG, EXCITED, TALK, SOLD
+        self.keeper_text = ""
+        self.keeper_char_idx = 0.0
+        self.talk_pages = []
+        self.talk_page_idx = 0
+
+        # Partículas flotantes de fondo del bazar del Dark World
+        self.bg_sparkles = [
+            {
+                "x": random.uniform(10, VIRTUAL_WIDTH - 10),
+                "y": random.uniform(10, 148),
+                "spd": random.uniform(10, 26),
+                "phase": random.uniform(0, math.pi * 2),
+                "col": random.choice([(80, 245, 255), (255, 85, 210), (255, 235, 90)]),
+            }
+            for _ in range(20)
+        ]
+
+        # Catálogo del Vendedor del Dark World
+        self.catalog = [
+            {
+                "id": "sturdy_arm",
+                "name": "Sturdy Arm",
+                "price": 25,
+                "heal": 0,
+                "sanity_heal": 0,
+                "atk_bonus": 5,
+                "def_bonus": 10,
+                "unique": True,
+                "desc": "¿Refuerzo robótico o mágico? de brazo. Incrementa +5 de Ataque y +10 de Defensa.",
+            },
+            {
+                "id": "darkburger",
+                "name": "Darkburger",
+                "price": 15,
+                "heal": 18,
+                "sanity_heal": 15,
+                "atk_bonus": 0,
+                "def_bonus": 0,
+                "unique": False,
+                "desc": "Hamburguesa misteriosa del Dark World. Restaura +18 HP y +15% Cordura.",
+            },
+            {
+                "id": "pan_estelar",
+                "name": "Pan Estelar",
+                "price": 12,
+                "heal": 14,
+                "sanity_heal": 25,
+                "atk_bonus": 0,
+                "def_bonus": 0,
+                "unique": False,
+                "desc": "Pan horneado con polvo de estrellas de UnderBread. +14 HP y +25% Cordura.",
+            },
+            {
+                "id": "elixir_neon",
+                "name": "Elixir Neón",
+                "price": 20,
+                "heal": 25,
+                "sanity_heal": 30,
+                "atk_bonus": 0,
+                "def_bonus": 0,
+                "unique": False,
+                "desc": "Destilado cibernético brillante. Restaura +25 HP y +30% Cordura.",
+            },
+        ]
+
+        self.talk_topics = [
+            (
+                "Sobre Sturdy Arm",
+                "EXCITED",
+                [
+                    "* '¡Ah, el [Sturdy Arm]! Mi obra maestra más intrigante.'",
+                    "* '¿Refuerzo robótico o mágico? de brazo. Incrementa +5 de Ataque y +10 de Defensa.'",
+                    "* 'Al comprarlo se acopla directamente a tu brazo para potenciar tus golpes y tu guardia.'",
+                ],
+            ),
+            (
+                "El Dark World",
+                "SMUG",
+                [
+                    "* 'La oscuridad bajo el sótano de la Iglesia cobró forma propia.'",
+                    "* '¿Notaste cómo cambió tu atuendo al cruzar la Fuente Oscura?'",
+                    "* 'Aquí los enemigos atacan con trayectorias erráticas: ¡mantén listo tu Parry [Z] y tu Dash [X]!'",
+                ],
+            ),
+            (
+                "Sobre los Jefes",
+                "TALK",
+                [
+                    "* 'En la superficie aguarda Morvath el Sepulturero, y más allá reina Vaelkor, Rey del Cristal Negro.'",
+                    "* 'Con mi [Sturdy Arm] (+5 ATK, +10 DEF) y un ★ BlackFlash preciso en la diana, ¡ningún jefe podrá detenerte!'",
+                ],
+            ),
+        ]
+
+    def _set_keeper_text(self, text, expression="WELCOME"):
+        self.keeper_text = text
+        self.keeper_char_idx = 0.0
+        self.expression = expression
+
+    def open(self, vendor_npc=None, player=None):
+        self.active = True
+        self.vendor_npc = vendor_npc
+        self.state = "MAIN"
+        self.main_idx = 0
+        self.sub_idx = 0
+        self._set_keeper_text(
+            "* ¡Bienvenido a mi Bazar del Dark World, viajero!\n* ¿Buscas poder robótico... o tal vez mágico?",
+            expression="WELCOME",
+        )
+        self.sound_fx.play_select()
+
+    def close(self):
+        self.active = False
+        self.sound_fx.play_select()
+
+    def _is_sturdy_arm_sold(self, player):
+        if self.vendor_npc and getattr(self.vendor_npc, "sold_sturdy_arm", False):
+            return True
+        if player and getattr(player, "sturdy_arm_equipped", False):
+            return True
+        if player and any(it.get("name") == "Sturdy Arm" for it in player.inventory):
+            return True
+        return False
+
+    def wrap_text(self, text, font, max_width):
+        lines = []
+        for paragraph in str(text).split("\n"):
+            words = paragraph.split(" ")
+            curr = ""
+            for w in words:
+                test = (curr + " " + w).strip()
+                if font.size(test)[0] <= max_width:
+                    curr = test
+                else:
+                    if curr:
+                        lines.append(curr)
+                    curr = w
+            if curr:
+                lines.append(curr)
+        return lines
+
+    def update(self, dt):
+        if not self.active:
+            return
+        self.anim_time += dt
+        if self.keeper_char_idx < len(self.keeper_text):
+            prev_i = int(self.keeper_char_idx)
+            self.keeper_char_idx = min(float(len(self.keeper_text)), self.keeper_char_idx + dt * 42.0)
+            if int(self.keeper_char_idx) > prev_i and int(self.keeper_char_idx) % 3 == 0:
+                self.sound_fx.play_blip()
+
+        for sp in self.bg_sparkles:
+            sp["y"] -= sp["spd"] * dt
+            if sp["y"] < 6:
+                sp["y"] = 150.0
+                sp["x"] = random.uniform(12, VIRTUAL_WIDTH - 12)
+
+    def handle_input(self, event, player):
+        if not self.active or event.type != pygame.KEYDOWN:
+            return
+
+        if self.state == "MAIN":
+            if event.key in [pygame.K_UP, pygame.K_w]:
+                self.main_idx = (self.main_idx - 1) % len(self.main_options)
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_DOWN, pygame.K_s]:
+                self.main_idx = (self.main_idx + 1) % len(self.main_options)
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
+                opt = self.main_options[self.main_idx]
+                if opt == "COMPRAR":
+                    self.state = "BUY"
+                    self.sub_idx = 0
+                    self._set_keeper_text("* ¡Elige lo que te llame la atención! El [Sturdy Arm] es único.", "EXCITED")
+                    self.sound_fx.play_select()
+                elif opt == "VENDER":
+                    self.state = "SELL"
+                    self.sub_idx = 0
+                    self._set_keeper_text("* ¿Qué tesoros de la superficie traes en tus bolsillos?", "SMUG")
+                    self.sound_fx.play_select()
+                elif opt == "HABLAR":
+                    self.state = "TALK"
+                    self.sub_idx = 0
+                    self._set_keeper_text("* ¡Jejeje! Siempre tengo tiempo para charlar en la oscuridad.", "TALK")
+                    self.sound_fx.play_select()
+                elif opt == "SALIR":
+                    self.close()
+            elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
+                self.close()
+
+        elif self.state == "BUY":
+            total_opts = len(self.catalog) + 1  # +1 para "Volver"
+            if event.key in [pygame.K_UP, pygame.K_w]:
+                self.sub_idx = (self.sub_idx - 1) % total_opts
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_DOWN, pygame.K_s]:
+                self.sub_idx = (self.sub_idx + 1) % total_opts
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
+                self.state = "MAIN"
+                self._set_keeper_text("* ¿Algo más que desees hacer en mi bazar?", "WELCOME")
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
+                if self.sub_idx == len(self.catalog):
+                    self.state = "MAIN"
+                    self._set_keeper_text("* ¿Algo más que desees hacer en mi bazar?", "WELCOME")
+                    self.sound_fx.play_select()
+                    return
+
+                item = self.catalog[self.sub_idx]
+                if item["unique"] and self._is_sturdy_arm_sold(player):
+                    self.sound_fx.play_hurt()
+                    self._set_keeper_text("* ¡Ya tienes equipado el [Sturdy Arm]! Solo existe uno en todo el Dark World.", "SMUG")
+                    return
+
+                if len(player.inventory) >= 8:
+                    self.sound_fx.play_hurt()
+                    self._set_keeper_text("* ¡Tus bolsillos están llenos (8/8)! Usa o vende algún objeto primero.", "TALK")
+                    return
+
+                # Si es el Sturdy Arm y al jugador le falta un poco de D$, el vendedor le hace oferta especial para que nunca se quede sin él
+                eff_price = min(player.gold, item["price"]) if item["unique"] else item["price"]
+                if player.gold < eff_price:
+                    self.sound_fx.play_hurt()
+                    self._set_keeper_text(f"* ¡Te faltan D$! Necesitas {eff_price} D$ para comprar {item['name']}.", "SMUG")
+                    return
+
+                player.gold -= eff_price
+                new_item = {
+                    "name": item["name"],
+                    "heal": item["heal"],
+                    "sanity_heal": item["sanity_heal"],
+                    "atk_bonus": item["atk_bonus"],
+                    "def_bonus": item["def_bonus"],
+                    "desc": item["desc"],
+                }
+                player.inventory.append(new_item)
+                if item["unique"]:
+                    if self.vendor_npc is not None:
+                        self.vendor_npc.sold_sturdy_arm = True
+                    if hasattr(player, "equip_in_slot"):
+                        sturdy_gear = {
+                            "name": item["name"],
+                            "slot": "BOTH",
+                            "atk_bonus": item["atk_bonus"],
+                            "def_bonus": item["def_bonus"],
+                            "desc": item["desc"],
+                        }
+                        player.equip_in_slot(0, sturdy_gear)
+                    elif not getattr(player, "sturdy_arm_equipped", False):
+                        player.sturdy_arm_equipped = True
+                        player.attack += item["atk_bonus"]
+                        player.defense += item["def_bonus"]
+                        player.weapon = item["name"]
+                        player.armor = f"{item['name']} (+10 DEF)"
+                    self.sound_fx.play_chest()
+                    self._set_keeper_text(
+                        f"* ¡¡COMPRADO Y EQUIPADO: [Sturdy Arm]!! (+5 ATK y +10 DEF -> ATK {player.effective_attack}, DEF {player.effective_defense})",
+                        "SOLD",
+                    )
+                else:
+                    self.sound_fx.play_heal()
+                    self._set_keeper_text(f"* ¡Gracias por tu compra! Guardaste [{item['name']}] en tu inventario.", "SOLD")
+
+        elif self.state == "SELL":
+            inv = player.inventory
+            total_opts = len(inv) + 1
+            if event.key in [pygame.K_UP, pygame.K_w]:
+                self.sub_idx = (self.sub_idx - 1) % total_opts
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_DOWN, pygame.K_s]:
+                self.sub_idx = (self.sub_idx + 1) % total_opts
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
+                self.state = "MAIN"
+                self._set_keeper_text("* ¿Algo más que desees en mi Bazar del Dark World?", "WELCOME")
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
+                if self.sub_idx >= len(inv):
+                    self.state = "MAIN"
+                    self._set_keeper_text("* ¿Algo más que desees en mi Bazar del Dark World?", "WELCOME")
+                    self.sound_fx.play_select()
+                    return
+                target_it = inv[self.sub_idx]
+                if target_it.get("name") == "Sturdy Arm" or target_it.get("atk_bonus"):
+                    self.sound_fx.play_hurt()
+                    self._set_keeper_text("* ¡Ohoho! ¡El [Sturdy Arm] es una reliquia irremplazable, quédatelo!", "SMUG")
+                    return
+                sold_it = inv.pop(self.sub_idx)
+                sell_val = max(6, int((sold_it.get("heal", 10) + sold_it.get("sanity_heal", 10)) * 0.4))
+                player.gold += sell_val
+                self.sub_idx = min(self.sub_idx, len(inv))
+                self.sound_fx.play_heal()
+                self._set_keeper_text(f"* ¡Trato hecho! Te doy +{sell_val} D$ por tu [{sold_it['name']}].", "SOLD")
+
+        elif self.state == "TALK":
+            total_opts = len(self.talk_topics) + 1
+            if event.key in [pygame.K_UP, pygame.K_w]:
+                self.sub_idx = (self.sub_idx - 1) % total_opts
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_DOWN, pygame.K_s]:
+                self.sub_idx = (self.sub_idx + 1) % total_opts
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
+                self.state = "MAIN"
+                self._set_keeper_text("* ¿En qué más puedo ayudarte, viajero?", "WELCOME")
+                self.sound_fx.play_select()
+            elif event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
+                if self.sub_idx >= len(self.talk_topics):
+                    self.state = "MAIN"
+                    self._set_keeper_text("* ¿En qué más puedo ayudarte, viajero?", "WELCOME")
+                    self.sound_fx.play_select()
+                    return
+                _, expr, pages = self.talk_topics[self.sub_idx]
+                self.talk_pages = list(pages)
+                self.talk_page_idx = 0
+                self.state = "TALK_DIALOGUE"
+                self._set_keeper_text(self.talk_pages[0], expr)
+                self.sound_fx.play_select()
+
+        elif self.state == "TALK_DIALOGUE":
+            if event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
+                if self.keeper_char_idx < len(self.keeper_text):
+                    self.keeper_char_idx = float(len(self.keeper_text))
+                else:
+                    self.talk_page_idx += 1
+                    if self.talk_page_idx < len(self.talk_pages):
+                        _, expr, _ = self.talk_topics[self.sub_idx]
+                        self._set_keeper_text(self.talk_pages[self.talk_page_idx], expr)
+                        self.sound_fx.play_select()
+                    else:
+                        self.state = "TALK"
+                        self._set_keeper_text("* ¿Quieres preguntarme sobre algún otro secreto?", "TALK")
+                        self.sound_fx.play_select()
+            elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
+                self.state = "TALK"
+                self._set_keeper_text("* ¿Quieres preguntarme sobre algún otro secreto?", "TALK")
+                self.sound_fx.play_select()
+
+    def _draw_soul_cursor(self, surface, x, y):
+        heart_rows = [
+            " 11 11 ",
+            "1111111",
+            "1111111",
+            " 11111 ",
+            "  111  ",
+            "   1   ",
+        ]
+        for r_idx, row in enumerate(heart_rows):
+            for c_idx, ch in enumerate(row):
+                if ch == "1":
+                    surface.set_at((int(x + c_idx), int(y + r_idx)), COLOR_SOUL_RED)
+
+    def _draw_shopkeeper_stage(self, surface, player):
+        """Dibuja la mitad superior (400x158) estilo tienda de Deltarune con el Vendedor animado."""
+        # 1. Fondo degradado neón del Bazar del Dark World
+        for y in range(158):
+            t = y / 158.0
+            r = int(14 + 18 * t)
+            g = int(6 + 10 * t)
+            b = int(34 + 34 * t)
+            pygame.draw.line(surface, (r, g, b), (0, y), (VIRTUAL_WIDTH, y))
+
+        # Cuadrícula en perspectiva y cortinas/estanterías del Bazar
+        scroll = int(self.anim_time * 18.0) % 32
+        for gx in range(-scroll, VIRTUAL_WIDTH, 32):
+            pygame.draw.line(surface, (42, 22, 76), (gx, 0), (gx, 158), 1)
+        for gy in range(18, 158, 28):
+            pygame.draw.line(surface, (42, 22, 76), (0, gy), (VIRTUAL_WIDTH, gy), 1)
+
+        # Partículas mágicas flotantes
+        for sp in self.bg_sparkles:
+            pulse = 1 + int(abs(math.sin(self.anim_time * 4.0 + sp["phase"])) * 2)
+            pygame.draw.circle(surface, sp["col"], (int(sp["x"]), int(sp["y"])), pulse)
+
+        # 2. Estanterías del fondo (Izquierda y Derecha) con frascos neón y cristales
+        for shelf_x in (16, 286):
+            pygame.draw.rect(surface, (22, 12, 42), (shelf_x, 18, 98, 108), border_radius=4)
+            pygame.draw.rect(surface, (0, 0, 0), (shelf_x, 18, 98, 108), 3, border_radius=4)
+            pygame.draw.rect(surface, (75, 235, 255), (shelf_x, 18, 98, 108), 1, border_radius=4)
+            for sy in (52, 88):
+                pygame.draw.line(surface, (180, 75, 215), (shelf_x + 4, sy), (shelf_x + 94, sy), 2)
+            # Frascos y reliquias brillantes en los estantes
+            pygame.draw.rect(surface, (90, 245, 255), (shelf_x + 16, 32, 12, 18), border_radius=3)
+            pygame.draw.circle(surface, (255, 95, 210), (shelf_x + 48, 40), 8)
+            pygame.draw.polygon(surface, (255, 230, 85), [(shelf_x + 76, 28), (shelf_x + 84, 48), (shelf_x + 68, 48)])
+            pygame.draw.rect(surface, (255, 130, 215), (shelf_x + 22, 68, 14, 18), border_radius=2)
+            pygame.draw.circle(surface, (110, 250, 170), (shelf_x + 66, 76), 9)
+
+        # 3. Retrato Grande Animado del Vendedor del Dark World en el Centro (x=135..265)
+        bob = int(math.sin(self.anim_time * 3.6) * 3)
+        is_talking = self.keeper_char_idx < len(self.keeper_text) and (int(self.anim_time * 15.0) % 2 == 0)
+        kx, ky = 200, 78 + bob
+
+        # Halo detrás del vendedor
+        pygame.draw.circle(surface, (46, 22, 82), (kx, ky - 4), 48)
+        pygame.draw.circle(surface, (85, 240, 255), (kx, ky - 4), 48, 1)
+
+        # Túnica / Capa de Mercader del Dark World con hombreras elegantes
+        cloak_pts = [(kx - 44, ky + 54), (kx - 32, ky + 6), (kx + 32, ky + 6), (kx + 44, ky + 54)]
+        pygame.draw.polygon(surface, (30, 16, 56), cloak_pts)
+        pygame.draw.polygon(surface, (0, 0, 0), cloak_pts, 3)
+        pygame.draw.polygon(surface, (80, 240, 255), cloak_pts, 1)
+        # Cuello alto y solapas magenta
+        pygame.draw.polygon(surface, (52, 22, 86), [(kx - 24, ky + 8), (kx, ky + 34), (kx + 24, ky + 8)])
+        pygame.draw.lines(surface, (255, 85, 215), False, [(kx - 24, ky + 8), (kx, ky + 34), (kx + 24, ky + 8)], 2)
+
+        # Cabeza y Sombrero / Capucha puntiaguda
+        pygame.draw.circle(surface, (18, 12, 34), (kx, ky - 10), 22)
+        pygame.draw.circle(surface, (85, 240, 255), (kx, ky - 10), 22, 1)
+        hat_pts = [(kx - 30, ky - 22), (kx, ky - 56), (kx + 30, ky - 22)]
+        pygame.draw.polygon(surface, (46, 18, 78), hat_pts)
+        pygame.draw.polygon(surface, (0, 0, 0), hat_pts, 3)
+        pygame.draw.polygon(surface, (255, 85, 215), hat_pts, 1)
+
+        # Gafas Neón Asimétricas (Rosa y Amarillo al estilo Deltarune)
+        glint = int(math.sin(self.anim_time * 5.0) * 3)
+        left_lens = pygame.Rect(kx - 19, ky - 18, 16, 11)
+        right_lens = pygame.Rect(kx + 3, ky - 18, 16, 11)
+        pygame.draw.rect(surface, (255, 85, 210), left_lens, border_radius=2)
+        pygame.draw.rect(surface, (255, 240, 85), right_lens, border_radius=2)
+        pygame.draw.rect(surface, (255, 255, 255), left_lens, 1, border_radius=2)
+        pygame.draw.rect(surface, (255, 255, 255), right_lens, 1, border_radius=2)
+        pygame.draw.line(surface, (255, 255, 255), (kx - 3, ky - 13), (kx + 3, ky - 13), 2)
+        # Brillo animado en los cristales
+        pygame.draw.line(surface, (255, 255, 255), (left_lens.x + 3 + glint, left_lens.y + 2), (left_lens.x + 7 + glint, left_lens.bottom - 3), 2)
+        pygame.draw.line(surface, (255, 255, 255), (right_lens.x + 3 + glint, right_lens.y + 2), (right_lens.x + 7 + glint, right_lens.bottom - 3), 2)
+
+        # Sonrisa / Boca animada según expresión y tipeo de voz
+        if is_talking:
+            pygame.draw.rect(surface, (95, 245, 255), (kx - 8, ky - 2, 16, 6), border_radius=2)
+            pygame.draw.line(surface, (18, 12, 34), (kx - 4, ky - 2), (kx - 4, ky + 4), 1)
+            pygame.draw.line(surface, (18, 12, 34), (kx + 4, ky - 2), (kx + 4, ky + 4), 1)
+        elif self.expression in ("EXCITED", "SOLD"):
+            pygame.draw.arc(surface, (255, 240, 90), (kx - 10, ky - 6, 20, 10), math.pi, math.pi * 2, 2)
+        elif self.expression == "SMUG":
+            pygame.draw.line(surface, (255, 95, 215), (kx - 8, ky + 1), (kx + 9, ky - 2), 2)
+        else:
+            pygame.draw.arc(surface, (95, 245, 255), (kx - 9, ky - 5, 18, 8), math.pi, math.pi * 2, 2)
+
+        # 4. Mostrador del Bazar en primer plano (y=128..158)
+        pygame.draw.rect(surface, (24, 14, 44), (0, 128, VIRTUAL_WIDTH, 30))
+        pygame.draw.line(surface, (0, 0, 0), (0, 128), (VIRTUAL_WIDTH, 128), 4)
+        pygame.draw.line(surface, (85, 245, 255), (0, 130), (VIRTUAL_WIDTH, 130), 2)
+
+        # Si el Sturdy Arm aún no se ha comprado, se exhibe flotando sobre un cojín de energía en el mostrador
+        if not self._is_sturdy_arm_sold(player):
+            ax, ay = 92, 116 - abs(bob)
+            pygame.draw.ellipse(surface, (55, 22, 95), (ax - 18, 124, 36, 8))
+            pygame.draw.ellipse(surface, (255, 85, 215), (ax - 18, 124, 36, 8), 1)
+            pygame.draw.circle(surface, (85, 245, 255), (ax, ay), 13, 1)
+            pygame.draw.rect(surface, (190, 215, 245), (ax - 10, ay - 4, 20, 8), border_radius=2)
+            pygame.draw.rect(surface, (0, 0, 0), (ax - 10, ay - 4, 20, 8), 1, border_radius=2)
+            pygame.draw.circle(surface, (255, 235, 85), (ax + 5, ay), 3)
+
+    def _draw_deltarune_box(self, surface, rect, border_col=(255, 255, 255), inner_col=(75, 105, 175)):
+        pygame.draw.rect(surface, (0, 0, 0), rect)
+        pygame.draw.rect(surface, border_col, rect, 3)
+        pygame.draw.rect(surface, inner_col, rect.inflate(-6, -6), 1)
+
+    def draw(self, surface, player):
+        if not self.active:
+            return
+
+        # 1. Escenario superior animado del Vendedor (y=0..158)
+        self._draw_shopkeeper_stage(surface, player)
+
+        # 2. Paneles inferiores estilo Deltarune (y=158..300)
+        if self.state == "MAIN":
+            left_box = pygame.Rect(6, 160, 254, 134)
+            right_box = pygame.Rect(264, 160, 130, 134)
+            self._draw_deltarune_box(surface, left_box)
+            self._draw_deltarune_box(surface, right_box)
+
+            # Texto tipeado del vendedor a la izquierda
+            shown = self.keeper_text[: int(self.keeper_char_idx)]
+            ty = left_box.y + 12
+            for line in self.wrap_text(shown, self.font_dialogue, left_box.width - 24)[:4]:
+                ts = self.font_dialogue.render(line, False, (255, 255, 255))
+                surface.blit(ts, (left_box.x + 12, ty))
+                ty += 18
+
+            # Barra inferior de Oro (D$) y Espacio
+            pygame.draw.line(surface, (60, 75, 120), (left_box.x + 10, left_box.bottom - 26), (left_box.right - 10, left_box.bottom - 26), 1)
+            gold_s = self.font_hud.render(f"D$ {player.gold}", False, (255, 235, 85))
+            spc_s = self.font_small.render(f"INV: {len(player.inventory)}/8", False, (160, 225, 255))
+            surface.blit(gold_s, (left_box.x + 14, left_box.bottom - 20))
+            surface.blit(spc_s, (left_box.right - 74, left_box.bottom - 19))
+
+            # Opciones a la derecha: COMPRAR, VENDER, HABLAR, SALIR
+            for i, opt in enumerate(self.main_options):
+                oy = right_box.y + 16 + i * 26
+                is_sel = (i == self.main_idx)
+                col = (255, 240, 85) if is_sel else (255, 255, 255)
+                os = self.font_hud.render(opt, False, col)
+                surface.blit(os, (right_box.x + 28, oy))
+                if is_sel:
+                    self._draw_soul_cursor(surface, right_box.x + 12, oy + 3)
+
+        elif self.state == "BUY":
+            left_box = pygame.Rect(6, 160, 232, 134)
+            right_box = pygame.Rect(242, 160, 152, 134)
+            self._draw_deltarune_box(surface, left_box)
+            self._draw_deltarune_box(surface, right_box, border_col=(85, 245, 255))
+
+            # Lista de artículos a la izquierda
+            for i, item in enumerate(self.catalog):
+                iy = left_box.y + 10 + i * 22
+                is_sel = (i == self.sub_idx)
+                sold = item["unique"] and self._is_sturdy_arm_sold(player)
+                if sold:
+                    col = (120, 125, 145)
+                    price_str = "AGOTADO"
+                else:
+                    col = (255, 240, 85) if is_sel else (255, 255, 255)
+                    price_str = f"{item['price']} D$"
+                ns = self.font_dialogue.render(item["name"], False, col)
+                ps = self.font_small.render(price_str, False, (255, 215, 90) if not sold else col)
+                surface.blit(ns, (left_box.x + 24, iy))
+                surface.blit(ps, (left_box.right - ps.get_width() - 12, iy + 2))
+                if is_sel:
+                    self._draw_soul_cursor(surface, left_box.x + 10, iy + 3)
+
+            # Opción Volver
+            back_y = left_box.y + 10 + len(self.catalog) * 22
+            is_back = (self.sub_idx == len(self.catalog))
+            bs = self.font_dialogue.render("Volver", False, (255, 240, 85) if is_back else (190, 200, 220))
+            surface.blit(bs, (left_box.x + 24, back_y))
+            if is_back:
+                self._draw_soul_cursor(surface, left_box.x + 10, back_y + 3)
+
+            # Panel derecho dinámico: Descripción y vista previa de estadísticas de Paniel
+            gold_hdr = self.font_hud.render(f"TU ORO: {player.gold} D$", False, (255, 235, 85))
+            surface.blit(gold_hdr, (right_box.x + 10, right_box.y + 8))
+            pygame.draw.line(surface, (60, 95, 150), (right_box.x + 8, right_box.y + 24), (right_box.right - 8, right_box.y + 24), 1)
+
+            if self.sub_idx < len(self.catalog):
+                sel_item = self.catalog[self.sub_idx]
+                dy = right_box.y + 28
+                for dl in self.wrap_text(sel_item["desc"], self.font_small, right_box.width - 18)[:4]:
+                    ds = self.font_small.render(dl, False, (215, 235, 255))
+                    surface.blit(ds, (right_box.x + 9, dy))
+                    dy += 12
+
+                # Comparación de estadísticas en vivo estilo Deltarune
+                pygame.draw.line(surface, (60, 95, 150), (right_box.x + 8, right_box.bottom - 42), (right_box.right - 8, right_box.bottom - 42), 1)
+                if sel_item["atk_bonus"] or sel_item["def_bonus"]:
+                    already = self._is_sturdy_arm_sold(player)
+                    cur_a = player.effective_attack
+                    cur_d = player.effective_defense
+                    new_a = cur_a if already else cur_a + sel_item["atk_bonus"]
+                    new_d = cur_d if already else cur_d + sel_item["def_bonus"]
+                    a_txt = f"ATK: {cur_a} -> {new_a} (+{sel_item['atk_bonus']})" if not already else f"ATK: {cur_a} (EQUIPADO)"
+                    d_txt = f"DEF: {cur_d} -> {new_d} (+{sel_item['def_bonus']})" if not already else f"DEF: {cur_d} (EQUIPADO)"
+                    asurf = self.font_small.render(a_txt, False, (100, 255, 140))
+                    dsurf = self.font_small.render(d_txt, False, (95, 235, 255))
+                    surface.blit(asurf, (right_box.x + 10, right_box.bottom - 36))
+                    surface.blit(dsurf, (right_box.x + 10, right_box.bottom - 21))
+                else:
+                    h_txt = f"CURA: +{sel_item['heal']} HP | +{sel_item['sanity_heal']}% MENTE"
+                    hs = self.font_small.render(h_txt, False, (120, 255, 165))
+                    inv_s = self.font_small.render(f"PANIEL HP: {player.hp}/{player.max_hp}", False, (255, 230, 120))
+                    surface.blit(hs, (right_box.x + 10, right_box.bottom - 36))
+                    surface.blit(inv_s, (right_box.x + 10, right_box.bottom - 21))
+            else:
+                 shown = self.keeper_text[: int(self.keeper_char_idx)]
+                 dy = right_box.y + 32
+                 for dl in self.wrap_text(shown, self.font_small, right_box.width - 18)[:5]:
+                     ds = self.font_small.render(dl, False, (235, 235, 245))
+                     surface.blit(ds, (right_box.x + 9, dy))
+                     dy += 13
+
+        elif self.state == "SELL":
+            left_box = pygame.Rect(6, 160, 232, 134)
+            right_box = pygame.Rect(242, 160, 152, 134)
+            self._draw_deltarune_box(surface, left_box)
+            self._draw_deltarune_box(surface, right_box)
+
+            inv = player.inventory
+            for i, it in enumerate(inv[:4]):
+                iy = left_box.y + 10 + i * 22
+                is_sel = (i == self.sub_idx)
+                is_relic = (it.get("name") == "Sturdy Arm" or it.get("atk_bonus"))
+                val_str = "RELIQUIA" if is_relic else f"+{max(6, int((it.get('heal', 10) + it.get('sanity_heal', 10)) * 0.4))} D$"
+                col = (255, 240, 85) if is_sel else (255, 255, 255)
+                ns = self.font_dialogue.render(it["name"], False, col)
+                vs = self.font_small.render(val_str, False, (255, 215, 90))
+                surface.blit(ns, (left_box.x + 24, iy))
+                surface.blit(vs, (left_box.right - vs.get_width() - 12, iy + 2))
+                if is_sel:
+                    self._draw_soul_cursor(surface, left_box.x + 10, iy + 3)
+
+            back_y = left_box.y + 10 + min(4, len(inv)) * 22
+            is_back = (self.sub_idx >= len(inv))
+            bs = self.font_dialogue.render("Volver", False, (255, 240, 85) if is_back else (190, 200, 220))
+            surface.blit(bs, (left_box.x + 24, back_y))
+            if is_back:
+                self._draw_soul_cursor(surface, left_box.x + 10, back_y + 3)
+
+            shown = self.keeper_text[: int(self.keeper_char_idx)]
+            dy = right_box.y + 14
+            for dl in self.wrap_text(shown, self.font_small, right_box.width - 18)[:6]:
+                ds = self.font_small.render(dl, False, (235, 235, 245))
+                surface.blit(ds, (right_box.x + 9, dy))
+                dy += 14
+
+        elif self.state == "TALK":
+            left_box = pygame.Rect(6, 160, 232, 134)
+            right_box = pygame.Rect(242, 160, 152, 134)
+            self._draw_deltarune_box(surface, left_box)
+            self._draw_deltarune_box(surface, right_box)
+
+            for i, (title, _, _) in enumerate(self.talk_topics):
+                iy = left_box.y + 14 + i * 24
+                is_sel = (i == self.sub_idx)
+                col = (255, 240, 85) if is_sel else (255, 255, 255)
+                ts = self.font_dialogue.render(title, False, col)
+                surface.blit(ts, (left_box.x + 24, iy))
+                if is_sel:
+                    self._draw_soul_cursor(surface, left_box.x + 10, iy + 3)
+
+            back_y = left_box.y + 14 + len(self.talk_topics) * 24
+            is_back = (self.sub_idx >= len(self.talk_topics))
+            bs = self.font_dialogue.render("Volver", False, (255, 240, 85) if is_back else (190, 200, 220))
+            surface.blit(bs, (left_box.x + 24, back_y))
+            if is_back:
+                self._draw_soul_cursor(surface, left_box.x + 10, back_y + 3)
+
+            shown = self.keeper_text[: int(self.keeper_char_idx)]
+            dy = right_box.y + 14
+            for dl in self.wrap_text(shown, self.font_small, right_box.width - 18)[:6]:
+                ds = self.font_small.render(dl, False, (215, 235, 255))
+                surface.blit(ds, (right_box.x + 9, dy))
+                dy += 14
+
+        elif self.state == "TALK_DIALOGUE":
+            full_box = pygame.Rect(6, 160, 388, 134)
+            self._draw_deltarune_box(surface, full_box)
+            shown = self.keeper_text[: int(self.keeper_char_idx)]
+            dy = full_box.y + 14
+            for dl in self.wrap_text(shown, self.font_dialogue, full_box.width - 28)[:4]:
+                ds = self.font_dialogue.render(dl, False, (255, 255, 255))
+                surface.blit(ds, (full_box.x + 14, dy))
+                dy += 20
+            hint_s = self.font_small.render("★ [Z / ENTER] Continuar ★", False, (255, 235, 85))
+            surface.blit(hint_s, (full_box.right - hint_s.get_width() - 14, full_box.bottom - 20))
+
 
 

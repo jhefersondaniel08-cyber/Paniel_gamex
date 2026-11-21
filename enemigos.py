@@ -241,6 +241,184 @@ ENEMY_TEMPLATES = {
             "apocalypse_crystal_rain",
         ],
     },
+    "bufon_caos": {
+        "id": "bufon_caos",
+        "name": "Jevix, Bufón del Caos",
+        "hp": 48,
+        "max_hp": 48,
+        "attack": 14,
+        "defense": 3,
+        "exp": 68,
+        "color": (210, 95, 255),
+        "intro_text": "* ¡Jevix, Bufón del Caos, salta haciendo malabares con naipes en el Dark World!",
+        "quotes": [
+            "* ¡¡PUEDO HACER CUALQUIER COSA, CAOS, CAOS!!",
+            "* ¡A ver si tu escudo de Parry adivina este giro!",
+            "* ¡Mis cartas nunca viajan en línea recta!",
+            "* ¡La vida en el Dark World es una ruleta loca!",
+        ],
+        "acts": [
+            {
+                "name": "Examinar",
+                "text": "* JEVIX, BUFÓN DEL CAOS - ATK 14 DEF 3 (DARK WORLD)\n* Habitante travieso del Dark World debajo de la iglesia.\n* Sus ataques cambian de dirección de forma totalmente errática.",
+                "mercy": 0,
+            },
+            {
+                "name": "Seguir Juego",
+                "text": "* Das una pirueta caótica siguiendo el ritmo de sus cascabeles.\n* ¡Jevix ríe encantado con tu locura!\n* (Piedad +50%)",
+                "mercy": 50,
+            },
+            {
+                "name": "Adivinar Carta",
+                "text": "* Señalas el As de Diamantes antes de que termine de barajar.\n* ¡Jevix aplaude sorprendido!\n* (Piedad +50%)",
+                "mercy": 50,
+            },
+        ],
+        "patterns": ["erratic_chaos_cards", "jester_ricochet_scythes"],
+    },
+    "centinela_neon": {
+        "id": "centinela_neon",
+        "name": "Viro-Centinela Neón",
+        "hp": 54,
+        "max_hp": 54,
+        "attack": 15,
+        "defense": 4,
+        "exp": 76,
+        "color": (75, 245, 255),
+        "intro_text": "* ¡Viro-Centinela Neón despliega sus alas holográficas con interferencia digital!",
+        "quotes": [
+            "* >> PROTOCOLO DE ATAQUE ERRÁTICO: ACTIVO <<",
+            "* ¡Mis paquetes de datos esquivarán tu guardia!",
+            "* ¡ERROR 404: PIEDAD NO ENCONTRADA!",
+            "* ¡Siente el voltaje del Cyber Dark World!",
+        ],
+        "acts": [
+            {
+                "name": "Examinar",
+                "text": "* VIRO-CENTINELA NEÓN - ATK 15 DEF 4 (DARK WORLD)\n* Guardián cibernético del Dark World subterráneo.\n* Sus proyectiles sufren 'glitch' y dan saltos laterales impredecibles.",
+                "mercy": 0,
+            },
+            {
+                "name": "Depurar Código",
+                "text": "* Reordenas sus paquetes de datos con un comando amistoso.\n* ¡El visor del Viro-Centinela muestra un icono feliz ^_^\n* (Piedad +50%)",
+                "mercy": 50,
+            },
+            {
+                "name": "Sincronizar",
+                "text": "* Sincronizas el brillo de tu Alma con su frecuencia de neón.\n* ¡Sus alas holográficas bajan en señal de paz!\n* (Piedad +50%)",
+                "mercy": 50,
+            },
+        ],
+        "patterns": ["erratic_cyber_viruses", "erratic_chaos_cards"],
+    },
+    "maniqui_esquiva": {
+        "id": "maniqui_esquiva",
+        "name": "Instructor de Esquiva",
+        "is_tutorial_dummy": True,
+        "hp": 20,
+        "max_hp": 20,
+        "attack": 4,
+        "defense": 1,
+        "exp": 15,
+        "color": (95, 225, 255),
+        "intro_text": "* ¡INSTRUCTOR DE ESQUIVA (Prueba 1/3): '¡Debes cruzar 4 BARRERAS por el HUECO VERDE sin ser golpeado (0/4)! SPARE está bloqueado hasta que logres 4/4.'",
+        "quotes": [
+            "* ¡Muévete al HUECO VERDE de la barrera!",
+            "* ¡Si te golpeo no cuenta: esquiva 4 veces!",
+            "* ¡Cada barrera esquivada da +25% MERCY!",
+            "* ¡Completa 4/4 esquivas limpias para usar SPARE!",
+        ],
+        "acts": [
+            {
+                "name": "Examinar",
+                "text": "* INSTRUCTOR DE ESQUIVA - PRUEBA OBLIGATORIA (4 ESQUIVAS LIMPIAS)\n* Lanza barreras con un recuadro verde indicando el HUECO SEGURO.\n* ¡Cruza 4 barreras por el hueco sin recibir daño para desbloquear SPARE!",
+                "mercy": 0,
+            },
+            {
+                "name": "Guía: Esquiva",
+                "text": "* PASO 1: Mira dónde aparece el recuadro verde en la barrera.\n* PASO 2: Mueve tu corazón con [Flechas / WASD] hasta alinearte con el hueco.\n* PASO 3: Cruza 4 barreras sin ser golpeado (4/4 = 100% MERCY).",
+                "mercy": 0,
+            },
+            {
+                "name": "Iniciar Prueba",
+                "text": "* ¡El Instructor lanza su tanda de barreras!\n* '¡Recuerda: ni ACT ni FIGHT suben mi MERCY! ¡Solo esquivar 4 barreras por el hueco!'",
+                "mercy": 0,
+            },
+        ],
+        "patterns": ["tutorial_dodge_corridor"],
+    },
+    "maniqui_parry": {
+        "id": "maniqui_parry",
+        "name": "Instructor de Parry",
+        "is_tutorial_dummy": True,
+        "hp": 22,
+        "max_hp": 22,
+        "attack": 4,
+        "defense": 1,
+        "exp": 15,
+        "color": (65, 250, 130),
+        "intro_text": "* ¡INSTRUCTOR DE PARRY (Prueba 2/3): '¡Debes bloquear 4 ESFERAS VERDES pulsando [Z] (Escudo Verde) antes del impacto (0/4) para desbloquear SPARE!'",
+        "quotes": [
+            "* ¡Cuando el anillo brille en amarillo, pulsa [Z]!",
+            "* ¡Bloquea 4 esferas con tu Escudo Verde [Z]!",
+            "* ¡Cada PARRY exitoso suma 1/4 (+25% MERCY)!",
+            "* ¡Sin 4/4 Parrys no podrás usar SPARE!",
+        ],
+        "acts": [
+            {
+                "name": "Examinar",
+                "text": "* INSTRUCTOR DE PARRY - PRUEBA OBLIGATORIA (4 PARRYS CON [Z])\n* Lanza esferas verdes guiadas directamente a tu corazón.\n* ¡Pulsa [Z] justo antes de que te toquen para bloquear 4 esferas y desbloquear SPARE!",
+                "mercy": 0,
+            },
+            {
+                "name": "Guía: Parry [Z]",
+                "text": "* PASO 1: Espera a que la esfera verde se acerque a tu corazón (su anillo cambia a amarillo).\n* PASO 2: Pulsa [Z] para activar el Escudo Verde durante 0.36s.\n* PASO 3: Haz 4 Parrys exitosos (4/4 = 100% MERCY y +16% TP por Parry).",
+                "mercy": 0,
+            },
+            {
+                "name": "Iniciar Prueba",
+                "text": "* ¡El Instructor apunta sus esferas guiadas hacia tu corazón!\n* '¡Pulsa [Z] en el momento justo 4 veces para superar mi entrenamiento!'",
+                "mercy": 0,
+            },
+        ],
+        "patterns": ["tutorial_parry_orbs"],
+    },
+    "maniqui_dash": {
+        "id": "maniqui_dash",
+        "name": "Instructor de Dash",
+        "is_tutorial_dummy": True,
+        "hp": 24,
+        "max_hp": 24,
+        "attack": 4,
+        "defense": 1,
+        "exp": 20,
+        "color": (255, 215, 80),
+        "intro_text": "* ¡INSTRUCTOR DE DASH (Prueba 3/3): '¡Debes ATRAVESAR 4 MUROS DORADOS pulsando [X] (DASH) al cruzarlos (0/4)! Hacer Dash lejos del muro no cuenta.'",
+        "quotes": [
+            "* ¡Camina hacia el muro dorado y pulsa [X] para cruzarlo!",
+            "* ¡Hacer Dash en el aire vacío no cuenta: cruza el muro!",
+            "* ¡Atraviesa 4 muros con [X] para llegar a 100% MERCY!",
+            "* ¡El Dash [X] te vuelve invulnerable al cruzar el láser!",
+        ],
+        "acts": [
+            {
+                "name": "Examinar",
+                "text": "* INSTRUCTOR DE DASH - PRUEBA OBLIGATORIA (ATRAVESAR 4 MUROS CON [X])\n* Lanza muros láser dorados de ancho/alto completo sin huecos.\n* ¡Debes cruzar a través de 4 muros usando [X] (DASH) para desbloquear SPARE!",
+                "mercy": 0,
+            },
+            {
+                "name": "Guía: Dash [X]",
+                "text": "* PASO 1: Mantén presionada la dirección hacia donde viene el muro dorado.\n* PASO 2: Justo al llegar al muro, pulsa [X] para impulsarte y atravesarlo sin daño.\n* PASO 3: Atraviesa 4 muros dorados (4/4 = 100% MERCY).",
+                "mercy": 0,
+            },
+            {
+                "name": "Iniciar Prueba",
+                "text": "* ¡El Instructor activa los muros láser de barrido completo!\n* '¡Demuestra que sabes atravesar 4 muros con [X] para graduarte del tutorial!'",
+                "mercy": 0,
+            },
+        ],
+        "patterns": ["tutorial_dash_walls"],
+    },
 }
 
 
@@ -257,8 +435,9 @@ class OverworldEnemy(WorldObject):
         self.hitbox_h = 14 if self.is_boss else 10
 
         self.state = "WANDER"  # WANDER, ALERT, CHASE
-        self.speed_wander = 22.0 if self.is_boss else 38.0
-        self.speed_chase = 66.0 if self.is_boss else 74.0
+        self.is_tutorial_dummy = self.template.get("is_tutorial_dummy", False)
+        self.speed_wander = 0.0 if self.is_tutorial_dummy else (22.0 if self.is_boss else 38.0)
+        self.speed_chase = 0.0 if self.is_tutorial_dummy else (66.0 if self.is_boss else 74.0)
 
         self.move_dir = [0.0, 0.0]
         self.move_timer = random.uniform(0.5, 2.0)
@@ -364,6 +543,12 @@ class OverworldEnemy(WorldObject):
             self._draw_sepulturero_overworld(surface, cx, cy + bob)
         elif self.template_id == "arconte":
             self._draw_arconte_overworld(surface, cx, cy + bob)
+        elif self.template_id == "bufon_caos":
+            self._draw_bufon_caos_overworld(surface, cx, cy + bob)
+        elif self.template_id == "centinela_neon":
+            self._draw_centinela_neon_overworld(surface, cx, cy + bob)
+        elif self.template_id in ("maniqui_esquiva", "maniqui_parry", "maniqui_dash"):
+            self._draw_tutorial_dummy_overworld(surface, cx, cy + bob)
 
         # Burbuja de exclamación [!] estilo Deltarune
         if self.state == "ALERT" or (self.state == "CHASE" and self.alert_timer > -0.3):
@@ -493,6 +678,48 @@ class OverworldEnemy(WorldObject):
         pygame.draw.polygon(surface, (245, 45, 100), blade, 1)
         pygame.draw.polygon(surface, (0, 0, 0), blade, 2)
 
+    def _draw_bufon_caos_overworld(self, surface, cx, cy):
+        """Dibuja a Jevix, Bufón del Caos en el mapa del Dark World."""
+        # Cuerpo de arlequín violeta y negro
+        pygame.draw.rect(surface, (55, 25, 95), (cx + 4, cy + 10, 14, 14), border_radius=3)
+        pygame.draw.rect(surface, (255, 225, 75), (cx + 4, cy + 10, 14, 14), 1, border_radius=3)
+        # Cabeza y sonrisa traviesa
+        pygame.draw.circle(surface, (215, 195, 245), (cx + 11, cy + 8), 6)
+        pygame.draw.rect(surface, (255, 235, 70), (cx + 8, cy + 6, 2, 2))
+        pygame.draw.rect(surface, (255, 235, 70), (cx + 12, cy + 6, 2, 2))
+        # Gorro de bufón de dos puntas con cascabeles
+        pygame.draw.polygon(surface, (140, 40, 220), [(cx + 5, cy + 4), (cx + 1, cy - 3), (cx + 11, cy + 3)])
+        pygame.draw.polygon(surface, (255, 70, 190), [(cx + 17, cy + 4), (cx + 21, cy - 3), (cx + 11, cy + 3)])
+        pygame.draw.circle(surface, (255, 235, 80), (cx + 1, cy - 3), 2)
+        pygame.draw.circle(surface, (255, 235, 80), (cx + 21, cy - 3), 2)
+
+    def _draw_centinela_neon_overworld(self, surface, cx, cy):
+        """Dibuja al Viro-Centinela Neón en el mapa del Dark World."""
+        # Alas holográficas cian/magenta
+        pygame.draw.polygon(surface, (60, 245, 255), [(cx + 4, cy + 8), (cx - 2, cy + 3), (cx + 2, cy + 18)], 1)
+        pygame.draw.polygon(surface, (255, 75, 215), [(cx + 18, cy + 8), (cx + 24, cy + 3), (cx + 20, cy + 18)], 1)
+        # Núcleo cibernético
+        pygame.draw.rect(surface, (22, 18, 44), (cx + 5, cy + 5, 12, 18), border_radius=3)
+        pygame.draw.rect(surface, (75, 245, 255), (cx + 5, cy + 5, 12, 18), 1, border_radius=3)
+        # Visor neón brillante
+        pygame.draw.rect(surface, (255, 80, 215), (cx + 7, cy + 8, 8, 4), border_radius=1)
+
+    def _draw_tutorial_dummy_overworld(self, surface, cx, cy):
+        """Dibuja a los 3 Instructores del Tutorial en sus pedestales de entrenamiento."""
+        col = self.template.get("color", (120, 225, 255))
+        # Pedestal y poste de madera/cristal
+        pygame.draw.ellipse(surface, (35, 30, 52), (cx + 2, cy + 20, 18, 7))
+        pygame.draw.ellipse(surface, col, (cx + 2, cy + 20, 18, 7), 1)
+        pygame.draw.rect(surface, (110, 80, 50), (cx + 9, cy + 12, 4, 12))
+        # Torso acorazado de entrenamiento
+        pygame.draw.rect(surface, (42, 34, 64), (cx + 4, cy + 6, 14, 12), border_radius=3)
+        pygame.draw.rect(surface, col, (cx + 4, cy + 6, 14, 12), 1, border_radius=3)
+        # Cabeza con emblema luminoso
+        pygame.draw.circle(surface, (235, 225, 200), (cx + 11, cy + 3), 5)
+        pygame.draw.circle(surface, col, (cx + 11, cy + 3), 5, 1)
+        pygame.draw.rect(surface, col, (cx + 8, cy + 2, 2, 2))
+        pygame.draw.rect(surface, col, (cx + 12, cy + 2, 2, 2))
+
 
 
 # 4. RENDERIZADOR DE SPRITES DE BATALLA RETRO PROCEDURAL
@@ -517,6 +744,12 @@ class DeltaruneEnemyRenderer:
             DeltaruneEnemyRenderer._draw_sepulturero(surface, ex, ey, anim_time, hit_flash, mercy)
         elif template_id == "arconte":
             DeltaruneEnemyRenderer._draw_arconte(surface, ex, ey, anim_time, hit_flash, mercy)
+        elif template_id == "bufon_caos":
+            DeltaruneEnemyRenderer._draw_bufon_caos(surface, ex, ey, anim_time, hit_flash, mercy)
+        elif template_id == "centinela_neon":
+            DeltaruneEnemyRenderer._draw_centinela_neon(surface, ex, ey, anim_time, hit_flash, mercy)
+        elif template_id in ("maniqui_esquiva", "maniqui_parry", "maniqui_dash"):
+            DeltaruneEnemyRenderer._draw_tutorial_dummy(surface, template_id, ex, ey, anim_time, hit_flash, mercy)
 
     @staticmethod
     def _draw_sombra(surface, x, y, t, flash, mercy):
@@ -881,5 +1114,145 @@ class DeltaruneEnemyRenderer:
         pygame.draw.polygon(surface, c_fire, sword_pts, 2)
         pygame.draw.polygon(surface, (0, 0, 0), sword_pts, 1)
         pygame.draw.line(surface, (255, 230, 245), (x + 28, sw_y - 32), (x + 28, sw_y + 28), 2)
+
+    @staticmethod
+    def _draw_bufon_caos(surface, x, y, t, flash, mercy):
+        """Dibuja a Jevix, Bufón del Caos en combate estilo Deltarune Dark World."""
+        is_spared = (mercy >= 100)
+        c_suit1 = (255, 255, 255) if flash > 0.05 else (95, 35, 165)
+        c_suit2 = (255, 255, 255) if flash > 0.05 else (235, 55, 165)
+        c_gold = (255, 235, 80)
+
+        # Rebote elástico de bufón
+        hop = int(abs(math.sin(t * 6.5)) * -6)
+        by = y + hop
+
+        pygame.draw.ellipse(surface, (25, 10, 40), (x - 22, y + 38, 44, 10))
+        pygame.draw.ellipse(surface, c_gold, (x - 20, y + 39, 40, 8), 1)
+
+        # Traje de arlequín dividido y cuello de picos amarillos
+        pygame.draw.rect(surface, c_suit1, (x - 14, by - 2, 14, 34), border_top_left_radius=4, border_bottom_left_radius=4)
+        pygame.draw.rect(surface, c_suit2, (x, by - 2, 14, 34), border_top_right_radius=4, border_bottom_right_radius=4)
+        pygame.draw.rect(surface, (0, 0, 0), (x - 14, by - 2, 28, 34), 2, border_radius=4)
+
+        for cx_off in (-10, 0, 10):
+            collar = [(x + cx_off - 5, by - 3), (x + cx_off, by + 6), (x + cx_off + 5, by - 3)]
+            pygame.draw.polygon(surface, c_gold, collar)
+            pygame.draw.polygon(surface, (0, 0, 0), collar, 1)
+
+        # Cabeza redonda lavanda y sonrisa de oreja a oreja
+        pygame.draw.circle(surface, (215, 200, 245), (x, by - 14), 13)
+        pygame.draw.circle(surface, (0, 0, 0), (x, by - 14), 13, 2)
+        pygame.draw.ellipse(surface, (15, 10, 25), (x - 8, by - 19, 6, 6))
+        pygame.draw.ellipse(surface, (15, 10, 25), (x + 2, by - 19, 6, 6))
+        pygame.draw.circle(surface, c_gold, (x - 5, by - 16), 2)
+        pygame.draw.circle(surface, c_gold, (x + 5, by - 16), 2)
+        pygame.draw.arc(surface, (255, 235, 80) if is_spared else (40, 15, 65), (x - 8, by - 14, 16, 10), math.pi, 2 * math.pi, 2)
+
+        # Gorro de bufón de dos puntas con cascabeles dorados
+        wiggle = int(math.sin(t * 8.0) * 3)
+        left_hat = [(x - 11, by - 22), (x - 26, by - 34 + wiggle), (x, by - 25)]
+        right_hat = [(x + 11, by - 22), (x + 26, by - 34 - wiggle), (x, by - 25)]
+        pygame.draw.polygon(surface, c_suit1, left_hat)
+        pygame.draw.polygon(surface, (0, 0, 0), left_hat, 2)
+        pygame.draw.polygon(surface, c_suit2, right_hat)
+        pygame.draw.polygon(surface, (0, 0, 0), right_hat, 2)
+        pygame.draw.circle(surface, c_gold, (x - 26, by - 34 + wiggle), 4)
+        pygame.draw.circle(surface, c_gold, (x + 26, by - 34 - wiggle), 4)
+
+        # Naipes mágicos orbitando alrededor
+        for i in range(4):
+            ang = t * 3.8 + i * (math.pi / 2.0)
+            kx = int(x + math.cos(ang) * 28)
+            ky = int(by + 6 + math.sin(ang) * 14)
+            col_c = (255, 75, 195) if i % 2 == 0 else (80, 240, 255)
+            pts = [(kx, ky - 6), (kx + 5, ky), (kx, ky + 6), (kx - 5, ky)]
+            pygame.draw.polygon(surface, col_c, pts)
+            pygame.draw.polygon(surface, (0, 0, 0), pts, 1)
+
+    @staticmethod
+    def _draw_centinela_neon(surface, x, y, t, flash, mercy):
+        """Dibuja al Viro-Centinela Neón en combate estilo Cyber Dark World."""
+        is_spared = (mercy >= 100)
+        c_body = (255, 255, 255) if flash > 0.05 else (20, 18, 44)
+        c_neon = (255, 240, 85) if is_spared else (70, 245, 255)
+        c_mag = (255, 75, 215)
+
+        pygame.draw.ellipse(surface, (15, 35, 55), (x - 24, y + 38, 48, 10))
+        pygame.draw.ellipse(surface, c_neon, (x - 22, y + 39, 44, 8), 1)
+
+        # Alas holográficas flotantes a los lados
+        wing_off = int(math.sin(t * 6.0) * 4)
+        for side in (-1, 1):
+            w_pts = [
+                (x + side * 14, y - 8),
+                (x + side * 34, y - 22 + wing_off),
+                (x + side * 28, y + 6),
+                (x + side * 34, y + 22 - wing_off),
+                (x + side * 14, y + 14),
+            ]
+            pygame.draw.polygon(surface, (30, 15, 55), w_pts)
+            pygame.draw.polygon(surface, c_neon if side < 0 else c_mag, w_pts, 2)
+
+        # Torso blindado cibernético
+        armor_pts = [(x, y - 28), (x + 18, y - 8), (x + 12, y + 34), (x - 12, y + 34), (x - 18, y - 8)]
+        pygame.draw.polygon(surface, c_body, armor_pts)
+        pygame.draw.polygon(surface, c_neon, armor_pts, 2)
+
+        # Visor LED cyberpunk en el rostro
+        pygame.draw.rect(surface, (0, 0, 0), (x - 13, y - 16, 26, 9), border_radius=2)
+        pygame.draw.rect(surface, c_mag if int(t * 10) % 2 == 0 else c_neon, (x - 11, y - 14, 22, 5), border_radius=1)
+
+        # Lanza de plasma neón en la mano derecha
+        lx = x + 24
+        ly = y + int(math.sin(t * 4.5) * 3)
+        pygame.draw.line(surface, (0, 0, 0), (lx, ly - 32), (lx, ly + 34), 5)
+        pygame.draw.line(surface, c_neon, (lx, ly - 32), (lx, ly + 34), 2)
+        pygame.draw.polygon(surface, c_mag, [(lx, ly - 40), (lx + 6, ly - 26), (lx - 6, ly - 26)])
+
+    @staticmethod
+    def _draw_tutorial_dummy(surface, template_id, x, y, t, flash, mercy):
+        """Dibuja al Instructor del Tutorial en combate con su icono de Esquiva, Escudo Parry [Z] o Dash [X]."""
+        is_spared = (mercy >= 100)
+        col = (255, 240, 85) if is_spared else (
+            (95, 225, 255) if template_id == "maniqui_esquiva" else (
+                (65, 250, 130) if template_id == "maniqui_parry" else (255, 195, 70)
+            )
+        )
+        c_body = (255, 255, 255) if flash > 0.05 else (48, 38, 72)
+
+        # Base / pedestal rúnico
+        pygame.draw.ellipse(surface, (20, 14, 34), (x - 24, y + 36, 48, 12))
+        pygame.draw.ellipse(surface, col, (x - 22, y + 37, 44, 10), 2)
+        pygame.draw.rect(surface, (115, 82, 48), (x - 4, y + 18, 8, 22))
+
+        # Torso de maniquí maestro con emblema
+        pygame.draw.rect(surface, c_body, (x - 16, y - 10, 32, 30), border_radius=5)
+        pygame.draw.rect(surface, col, (x - 16, y - 10, 32, 30), 2, border_radius=5)
+
+        # Brazos de madera articulados
+        sway = int(math.sin(t * 4.0) * 3)
+        pygame.draw.line(surface, (140, 105, 65), (x - 16, y), (x - 28, y - 6 + sway), 4)
+        pygame.draw.line(surface, (140, 105, 65), (x + 16, y), (x + 28, y - 6 - sway), 4)
+
+        # Emblema en el pecho según la lección (Corazón / Escudo Verde / Rayo Dash)
+        if template_id == "maniqui_esquiva":
+            pygame.draw.circle(surface, col, (x, y + 5), 7, 2)
+        elif template_id == "maniqui_parry":
+            sh_pts = [(x, y - 4), (x + 8, y), (x + 6, y + 10), (x, y + 15), (x - 6, y + 10), (x - 8, y)]
+            pygame.draw.polygon(surface, (35, 190, 95), sh_pts)
+            pygame.draw.polygon(surface, col, sh_pts, 2)
+        else:
+            bolt = [(x + 3, y - 4), (x - 5, y + 5), (x + 1, y + 5), (x - 3, y + 14), (x + 6, y + 4), (x, y + 4)]
+            pygame.draw.polygon(surface, col, bolt)
+
+        # Cabeza y sombrero de instructor
+        pygame.draw.circle(surface, (235, 222, 195), (x, y - 22), 11)
+        pygame.draw.circle(surface, (0, 0, 0), (x, y - 22), 11, 2)
+        pygame.draw.circle(surface, (30, 25, 45), (x - 4, y - 23), 2)
+        pygame.draw.circle(surface, (30, 25, 45), (x + 4, y - 23), 2)
+        pygame.draw.arc(surface, (30, 25, 45), (x - 5, y - 21, 10, 6), math.pi, 2 * math.pi, 2)
+        pygame.draw.polygon(surface, c_body, [(x - 13, y - 30), (x, y - 42), (x + 13, y - 30)])
+        pygame.draw.polygon(surface, col, [(x - 13, y - 30), (x, y - 42), (x + 13, y - 30)], 2)
 
 
