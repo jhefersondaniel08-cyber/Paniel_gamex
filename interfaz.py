@@ -214,8 +214,7 @@ class PanielMentalHUD:
         self.anim_time += dt
 
     def _generate_face(self, state, t):
-        """Genera el rostro pixel art 32x32 de Paniel mostrando su nivel progresivo de locura."""
-        # Frame de animación para ojos y gestos
+        """Genera el rostro pixel art 32x32 de Paniel reproduciendo fielmente su diseño original auténtico."""
         anim_step = int(t * 7) % 6
         key = (state, anim_step)
         if key in self._cache:
@@ -223,103 +222,108 @@ class PanielMentalHUD:
 
         surf = pygame.Surface((32, 32), pygame.SRCALPHA)
 
-        # Color base de piel que se vuelve más pálida / demacrada con la locura
+        # Color base de piel del diseño de Paniel
         skin_color = {
-            "FELIZ":    (255, 218, 175),
-            "TRISTE":   (210, 205, 225),
-            "TRAUMADO": (185, 180, 210),
-            "LOCO":     (255, 190, 160),
-        }.get(state, (255, 218, 175))
+            "FELIZ":      (255, 196, 155),
+            "TRISTE":     (215, 200, 220),
+            "TRAUMADO":   (190, 180, 210),
+            "LOCO":       (255, 185, 155),
+            "DARK_WORLD": (215, 200, 240),
+        }.get(state, (255, 196, 155))
 
-        # Cabeza redonda
-        pygame.draw.circle(surf, skin_color, (16, 16), 13)
+        if state == "DARK_WORLD":
+            hair_gray = (70, 130, 200)
+            hair_white = (170, 225, 255)
+            eye_col = (10, 15, 30)
+        elif state == "LOCO":
+            hair_gray = (175, 175, 185)
+            hair_white = (255, 250, 250)
+            eye_col = (235, 30, 30)
+        else:
+            hair_gray = (196, 196, 196)
+            hair_white = (255, 255, 255)
+            eye_col = (0, 0, 0)
 
-        # Cabello castaño oscuro característico
-        hair_color = (75, 48, 35) if state != "LOCO" else (95, 40, 30)
-        pygame.draw.arc(surf, hair_color, (3, 3, 26, 18), 0, math.pi, 5)
-        pygame.draw.rect(surf, hair_color, (4, 7, 24, 7), border_radius=2)
-        # Mechones
-        pygame.draw.line(surf, hair_color, (8, 12), (10, 16), 2)
-        pygame.draw.line(surf, hair_color, (22, 12), (24, 16), 2)
+        # Cabeza rectangular con bordes suaves según el pixel art original
+        pygame.draw.rect(surf, skin_color, (7, 10, 18, 11), border_radius=3)
+
+        # Mechones puntiagudos de cabello del diseño original
+        # Lado izquierdo (tono plateado/gris)
+        pygame.draw.rect(surf, hair_gray, (4, 7, 11, 7))
+        pygame.draw.polygon(surf, hair_gray, [(5, 7), (8, 2), (10, 7)])
+        # Lado derecho (brillos blancos característicos)
+        pygame.draw.rect(surf, hair_white, (15, 7, 13, 7))
+        pygame.draw.polygon(surf, hair_white, [(21, 7), (24, 2), (26, 7)])
+
+        # Flequillo superior a dos tonos
+        pygame.draw.rect(surf, hair_gray, (5, 9, 10, 3))
+        pygame.draw.rect(surf, hair_white, (15, 9, 12, 3))
+
+        # Mechón blanco central característico que cae entre los ojos
+        pygame.draw.rect(surf, hair_white, (13, 11, 2, 4))
+
+        # Contorno oscuro exterior
+        pygame.draw.rect(surf, (0, 0, 0), (6, 5, 20, 17), 1, border_radius=3)
+
+        # Ojos del diseño original: ranuras verticales características
+        shake = int(math.sin(t * 26.0) * 1.5) if state == "LOCO" else 0
 
         if state == "FELIZ":
-            # Ojos amigables y tranquilos
-            pygame.draw.circle(surf, (40, 40, 60), (11, 14), 2)
-            pygame.draw.circle(surf, (40, 40, 60), (21, 14), 2)
-            pygame.draw.rect(surf, (255, 255, 255), (11, 13, 1, 1))
-            pygame.draw.rect(surf, (255, 255, 255), (21, 13, 1, 1))
-            # Sonrisa cálida
-            pygame.draw.arc(surf, (160, 75, 60), (10, 16, 12, 7), math.pi, 2 * math.pi, 2)
-            # Mejillas sonrosadas
-            pygame.draw.circle(surf, (255, 150, 150), (9, 18), 2)
-            pygame.draw.circle(surf, (255, 150, 150), (23, 18), 2)
+            # Ojos auténticos de Paniel: ranuras verticales
+            pygame.draw.rect(surf, eye_col, (10, 13, 1, 4))
+            pygame.draw.rect(surf, eye_col, (15, 13, 1, 4))
+            # Amplia sonrisa auténtica del diseño de Paniel
+            pygame.draw.rect(surf, (0, 0, 0), (10, 18, 7, 1))
+            pygame.draw.rect(surf, (0, 0, 0), (11, 19, 5, 1))
 
         elif state == "TRISTE":
-            # Ojos caídos con mirada baja
-            pygame.draw.line(surf, (50, 50, 80), (9, 15), (13, 16), 2)
-            pygame.draw.line(surf, (50, 50, 80), (19, 16), (23, 15), 2)
-            # Cejas caídas
-            pygame.draw.line(surf, (70, 60, 80), (8, 12), (13, 14), 1)
-            pygame.draw.line(surf, (70, 60, 80), (19, 14), (24, 12), 1)
-            # Boca curvada hacia abajo
-            pygame.draw.arc(surf, (110, 75, 75), (10, 20, 12, 6), 0, math.pi, 2)
-            # Lágrima rodando por la mejilla
-            tear_y = 17 + (anim_step % 5)
-            pygame.draw.circle(surf, (110, 170, 255), (10, tear_y), 2)
+            # Ojos melancólicos con leve inclinación y lágrima
+            pygame.draw.line(surf, (30, 30, 60), (9, 14), (11, 16), 1)
+            pygame.draw.line(surf, (30, 30, 60), (16, 16), (18, 14), 1)
+            pygame.draw.circle(surf, (110, 175, 255), (10, 18), 1)
+            pygame.draw.rect(surf, (60, 50, 70), (11, 19, 5, 1))
 
         elif state == "TRAUMADO":
-            # Ojos desmesuradamente abiertos de espanto
-            pygame.draw.circle(surf, (245, 245, 255), (11, 14), 4)
-            pygame.draw.circle(surf, (245, 245, 255), (21, 14), 4)
-            # Pupilas minúsculas temblando de horror
-            pupil_jitter = (anim_step % 2)
-            pygame.draw.circle(surf, (25, 20, 35), (11 + pupil_jitter, 14), 1)
-            pygame.draw.circle(surf, (25, 20, 35), (21 - pupil_jitter, 14), 1)
-            # Ojeras violáceas
-            pygame.draw.arc(surf, (110, 80, 150), (7, 16, 8, 4), math.pi, 2 * math.pi, 1)
-            pygame.draw.arc(surf, (110, 80, 150), (17, 16, 8, 4), math.pi, 2 * math.pi, 1)
-            # Boca temblorosa en zigzag
-            pygame.draw.line(surf, (120, 70, 70), (11, 22), (13, 20), 1)
-            pygame.draw.line(surf, (120, 70, 70), (13, 20), (16, 22), 1)
-            pygame.draw.line(surf, (120, 70, 70), (16, 22), (19, 20), 1)
-            pygame.draw.line(surf, (120, 70, 70), (19, 20), (21, 22), 1)
-            # Gota de sudor frío cayendo
-            pygame.draw.ellipse(surf, (140, 200, 255), (23, 8 + (anim_step % 4), 3, 4))
+            # Ojos abiertos con pupilas en hendidura temblorosa
+            pygame.draw.rect(surf, (255, 255, 255), (9, 13, 3, 4))
+            pygame.draw.rect(surf, (255, 255, 255), (15, 13, 3, 4))
+            pygame.draw.rect(surf, (0, 0, 0), (10, 14, 1, 2))
+            pygame.draw.rect(surf, (0, 0, 0), (16, 14, 1, 2))
+            pygame.draw.rect(surf, (0, 0, 0), (11, 19, 5, 1))
 
         elif state == "LOCO":
-            # Sacudida espasmódica de la cabeza
-            shake_x = int(math.sin(t * 26.0) * 1.5)
-            # Ojos inyectados en sangre
-            pygame.draw.circle(surf, (255, 240, 240), (11 + shake_x, 13), 5)
-            pygame.draw.circle(surf, (255, 240, 240), (21 - shake_x, 13), 5)
-            # Venitas rojas
-            pygame.draw.line(surf, (255, 50, 50), (8 + shake_x, 11), (11 + shake_x, 13), 1)
-            pygame.draw.line(surf, (255, 50, 50), (24 - shake_x, 11), (21 - shake_x, 13), 1)
-            # Iris rojos luminosos y desorbitados
-            pygame.draw.circle(surf, (230, 20, 20), (11 + shake_x, 13), 3)
-            pygame.draw.circle(surf, (230, 20, 20), (21 - shake_x, 13), 3)
-            pygame.draw.circle(surf, (255, 240, 60), (11 + shake_x, 13), 1)
-            pygame.draw.circle(surf, (255, 240, 60), (21 - shake_x, 13), 1)
-            # Enorme y desquiciada sonrisa de oreja a oreja
-            pygame.draw.arc(surf, (160, 30, 30), (7, 14, 18, 12), math.pi, 2 * math.pi, 3)
-            # Dientes afilados y desordenados
-            for di in range(5):
-                pygame.draw.rect(surf, (255, 255, 240), (9 + di * 3, 19, 2, 4))
-            # Vórtices / destellos de locura alrededor de la cabeza
-            for vi in range(4):
-                ang = t * 6.0 + vi * (math.pi / 2)
-                vx = int(16 + math.cos(ang) * 15)
-                vy = int(16 + math.sin(ang) * 15)
-                if 0 <= vx < 32 and 0 <= vy < 32:
-                    surf.set_at((vx, vy), (255, 60, 60, 200))
+            # Ojos inyectados en sangre vibrando al unísono
+            pygame.draw.rect(surf, (235, 30, 30), (10 + shake, 13, 1, 4))
+            pygame.draw.rect(surf, (235, 30, 30), (15 + shake, 13, 1, 4))
+            pygame.draw.rect(surf, (255, 220, 60), (10 + shake, 14, 1, 1))
+            pygame.draw.rect(surf, (255, 220, 60), (15 + shake, 14, 1, 1))
+            # Sonrisa desquiciada de oreja a oreja con dientes
+            pygame.draw.rect(surf, (180, 20, 20), (9 + shake, 18, 9, 2))
+            for di in range(4):
+                pygame.draw.rect(surf, (255, 255, 255), (10 + di * 2 + shake, 18, 1, 1))
+
+        elif state == "DARK_WORLD":
+            # Diseño auténtico del Dark World
+            pygame.draw.rect(surf, (10, 20, 45), (10, 13, 1, 4))
+            pygame.draw.rect(surf, (10, 20, 45), (15, 13, 1, 4))
+            pygame.draw.rect(surf, (10, 20, 45), (10, 18, 7, 1))
+            pygame.draw.rect(surf, (10, 20, 45), (11, 19, 5, 1))
+
+        self._cache[key] = surf
+        return surf
 
         self._cache[key] = surf
         return surf
 
     def get_face(self, state, t, player=None):
         """Obtiene el retrato 1:1 desde Estadisticas.png del estado mental actual (o respaldo procedural)."""
-        if player is not None and hasattr(player, "stat_portraits") and state in player.stat_portraits:
-            portrait = player.stat_portraits[state]
+        if player is not None:
+            portrait = None
+            if hasattr(player, "get_stat_portrait"):
+                portrait = player.get_stat_portrait()
+            elif hasattr(player, "stat_portraits") and state in player.stat_portraits:
+                portrait = player.stat_portraits[state]
+
             if portrait is not None:
                 if state == "LOCO":
                     shake_x = int(math.sin(t * 26.0) * 1.0)
@@ -445,13 +449,14 @@ class RetroHUD:
         pygame.draw.rect(surface, (220, 220, 235), (bar_rect.x + 114, bar_rect.y + 5, max_bar_w, 9), 1)
         surface.blit(hp_num, (bar_rect.x + 160, bar_rect.y + 4))
 
-        # Lugar actual alineado a la derecha dentro de la caja (sin desbordar jamás)
-        if is_running:
-            run_lbl = self.font_prompt.render("»SPRINT«", False, (140, 240, 255))
-            surface.blit(run_lbl, (bar_rect.x + 206, bar_rect.y + 5))
-
+        # Lugar actual alineado a la derecha dentro de la caja (sin desbordar ni pisar textos)
         loc_txt = self.font_prompt.render(area_name, False, (205, 225, 255))
         loc_x = max(bar_rect.x + 210, bar_rect.right - loc_txt.get_width() - 8)
+        if is_running:
+            run_lbl = self.font_prompt.render("»RUN«", False, (140, 240, 255))
+            if bar_rect.x + 206 + run_lbl.get_width() + 6 <= loc_x:
+                surface.blit(run_lbl, (bar_rect.x + 206, bar_rect.y + 5))
+
         surface.blit(loc_txt, (loc_x, bar_rect.y + 5))
 
         surface.set_clip(prev_clip)
@@ -612,8 +617,10 @@ class UndertaleMenu:
                 self.sound_fx.play_select()
             elif event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
                 chosen = candidates[self.equip_list_idx]
-                player.equip_in_slot(self.equip_slot_idx, chosen)
-                self.sound_fx.play_heal()
+                if player.equip_in_slot(self.equip_slot_idx, chosen):
+                    self.sound_fx.play_heal()
+                else:
+                    self.sound_fx.play_hurt()
                 self.state = "SUBMENU_EQUIP_SLOT"
             elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
                 self.state = "SUBMENU_EQUIP_SLOT"
@@ -664,9 +671,10 @@ class UndertaleMenu:
 
                 if self.action_idx == 0:  # USAR / EQUIPAR
                     if item.get("atk_bonus") or item.get("def_bonus"):
+                        equipped_ok = True
                         if hasattr(player, "equip_in_slot"):
                             slot_t = 0 if item.get("atk_bonus", 0) >= item.get("def_bonus", 0) or item["name"] == "Sturdy Arm" else 1
-                            player.equip_in_slot(slot_t, {
+                            equipped_ok = player.equip_in_slot(slot_t, {
                                 "name": item["name"],
                                 "slot": "BOTH" if item["name"] == "Sturdy Arm" else ("WEAPON" if slot_t == 0 else "ARMOR"),
                                 "atk_bonus": item.get("atk_bonus", 0),
@@ -679,12 +687,19 @@ class UndertaleMenu:
                             player.defense += item.get("def_bonus", 0)
                             player.weapon = item["name"]
                             player.armor = f"{item['name']} (+10 DEF)"
-                        self.sound_fx.play_heal()
-                        self.msg_lines = [
-                            f"* ¡Equipaste {item['name']}!",
-                            f"* \"{item.get('desc', '')}\"",
-                            f"* (Estadísticas actuales: ATK {player.effective_attack} | DEF {player.effective_defense})",
-                        ]
+                        if equipped_ok:
+                            self.sound_fx.play_heal()
+                            self.msg_lines = [
+                                f"* ¡Equipaste {item['name']}!",
+                                f"* \"{item.get('desc', '')}\"",
+                                f"* (Estadísticas actuales: ATK {player.effective_attack} | DEF {player.effective_defense})",
+                            ]
+                        else:
+                            self.sound_fx.play_hurt()
+                            self.msg_lines = [
+                                f"* Ya tienes equipado {item['name']} en otra ranura.",
+                                "* Cámbialo desde el menú [EQUIP] si deseas moverlo.",
+                            ]
                         self.state = "ITEM_MESSAGE"
                     else:
                         player.inventory.pop(self.item_idx)
@@ -1144,12 +1159,9 @@ class UndertaleMenu:
 # ==========================================================
 class DeltaruneTitleScreen:
     """
-    Pantalla de introducción y título estilo DELTARUNE:
-    - Fase 1 ("LEGEND"): Prólogo cinematográfico con paneles ilustrados,
-      efecto máquina de escribir y opción de saltar con [X] o avanzar con [Z].
-    - Fase 2 ("TITLE"): Pantalla de título con Fuente Oscura (Dark Fountain)
-      ascendente en el fondo, emblema Delta Rune alado, título P A N I E L
-      y menú interactivo con el Alma Roja.
+    Pantalla de título estilo DELTARUNE:
+    - Pantalla de título con Fuente Oscura (Dark Fountain) ascendente en el fondo,
+      emblema Delta Rune alado, título U N D E R B R E A D y menú interactivo con el Alma Roja.
     """
     def __init__(self, sound_fx, sprite_mgr=None):
         self.sound_fx = sound_fx
@@ -1158,47 +1170,14 @@ class DeltaruneTitleScreen:
         self.font_title = pygame.font.SysFont("Lucida Console", 26, bold=True) or pygame.font.SysFont("Courier New", 26, bold=True)
         self.font_sub = pygame.font.SysFont("Lucida Console", 11, bold=True)
         self.font_menu = pygame.font.SysFont("Lucida Console", 12, bold=True)
-        self.font_lore = pygame.font.SysFont("Lucida Console", 11)
         self.font_small = pygame.font.SysFont("Lucida Console", 9, bold=True)
 
-        self.state = "LEGEND"  # "LEGEND", "TITLE", "CONTROLS"
+        self.state = "TITLE"  # "TITLE", "CONTROLS"
         self.timer = 0.0
         self.fade_alpha = 255.0
 
-        # Prólogo estilo "The Legend" de Deltarune
-        self.legend_slides = [
-            {
-                "panel": 0,
-                "lines": [
-                    "Hace mucho tiempo, una leyenda se",
-                    "susurraba entre la niebla otoñal...",
-                    "Una leyenda de SOMBRAS y de CORDURA."
-                ]
-            },
-            {
-                "panel": 1,
-                "lines": [
-                    "En el límite entre la vigilia y el",
-                    "olvido yace EL CEMENTERIO ETERNO,",
-                    "donde las almas rotas nunca descansan."
-                ]
-            },
-            {
-                "panel": 2,
-                "lines": [
-                    "Solo un alma atrapada en el ciclo de",
-                    "la muerte puede desafiar la oscuridad",
-                    "antes de que su mente se quiebre..."
-                ]
-            }
-        ]
-        self.slide_idx = 0
-        self.char_idx = 0.0
-        self.type_speed = 34.0
-        self.last_beep_char = 0
-
         # Opciones del menú de título
-        self.menu_options = ["INICIAR JUEGO", "CONTROLES", "SALIR"]
+        self.menu_options = ["INICIAR JUEGO", "TUTORIAL", "CONTROLES", "SALIR"]
         self.menu_idx = 0
 
         # Partículas ascendentes de la Fuente Oscura (Dark Fountain)
@@ -1213,46 +1192,19 @@ class DeltaruneTitleScreen:
                 "col_idx": random.choice([0, 1, 2])
             })
 
-    def _current_slide_total_chars(self):
-        slide = self.legend_slides[self.slide_idx]
-        return sum(len(line) for line in slide["lines"])
-
     def handle_input(self, event):
         """
         Procesa entradas de teclado.
         Retorna:
           - "START_GAME" cuando el jugador elige INICIAR JUEGO
+          - "START_TUTORIAL" cuando el jugador elige TUTORIAL
           - "QUIT" cuando elige SALIR
           - None en cualquier otro caso
         """
         if event.type != pygame.KEYDOWN:
             return None
 
-        if self.state == "LEGEND":
-            # [X] o [C] salta directamente al título
-            if event.key in [pygame.K_x, pygame.K_c, pygame.K_ESCAPE]:
-                self.sound_fx.play_select()
-                self.state = "TITLE"
-                self.fade_alpha = 180.0
-                return None
-
-            # [Z], [ENTER] o [ESPACIO] avanza texto o pasa a la siguiente diapositiva
-            if event.key in [pygame.K_z, pygame.K_RETURN, pygame.K_SPACE]:
-                total = self._current_slide_total_chars()
-                if self.char_idx < total:
-                    self.char_idx = float(total)
-                else:
-                    self.sound_fx.play_select()
-                    self.slide_idx += 1
-                    if self.slide_idx >= len(self.legend_slides):
-                        self.state = "TITLE"
-                        self.fade_alpha = 200.0
-                    else:
-                        self.char_idx = 0.0
-                        self.last_beep_char = 0
-                return None
-
-        elif self.state == "CONTROLS":
+        if self.state == "CONTROLS":
             if event.key in [pygame.K_z, pygame.K_x, pygame.K_c, pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE]:
                 self.sound_fx.play_select()
                 self.state = "TITLE"
@@ -1270,6 +1222,8 @@ class DeltaruneTitleScreen:
                 choice = self.menu_options[self.menu_idx]
                 if choice == "INICIAR JUEGO":
                     return "START_GAME"
+                elif choice == "TUTORIAL":
+                    return "START_TUTORIAL"
                 elif choice == "CONTROLES":
                     self.state = "CONTROLS"
                 elif choice == "SALIR":
@@ -1283,14 +1237,6 @@ class DeltaruneTitleScreen:
         self.timer += dt
         if self.fade_alpha > 0:
             self.fade_alpha = max(0.0, self.fade_alpha - 260.0 * dt)
-
-        if self.state == "LEGEND":
-            total = self._current_slide_total_chars()
-            if self.char_idx < total:
-                self.char_idx = min(float(total), self.char_idx + self.type_speed * dt)
-                if int(self.char_idx) - self.last_beep_char >= 3:
-                    self.last_beep_char = int(self.char_idx)
-                    self.sound_fx.play_blip()
 
         # Actualizar partículas de la Fuente Oscura
         for p in self.fountain_particles:
@@ -1350,83 +1296,6 @@ class DeltaruneTitleScreen:
         pygame.draw.polygon(surface, color, pts)
         pygame.draw.polygon(surface, (255, 190, 200), pts, 1)
 
-    def _draw_legend(self, surface):
-        surface.fill((6, 6, 12))
-
-        # Marco ilustrado superior estilo "The Legend" de Deltarune (sepia/cian oscuro)
-        art_rect = pygame.Rect(68, 22, 264, 134)
-        pygame.draw.rect(surface, (16, 18, 32), art_rect)
-
-        panel_id = self.legend_slides[self.slide_idx]["panel"]
-        sepia_main = (195, 155, 95)
-        sepia_bright = (240, 205, 135)
-        sepia_dark = (75, 55, 40)
-
-        # Ilustración según la diapositiva
-        if panel_id == 0:
-            # Panel 1: Colina bajo la luna y fuente de sombra surgiendo
-            pygame.draw.circle(surface, sepia_bright, (art_rect.centerx, art_rect.y + 38), 20)
-            pygame.draw.circle(surface, (16, 18, 32), (art_rect.centerx + 7, art_rect.y + 34), 17)
-            for i in range(6):
-                w_bar = 18 - i * 2
-                pygame.draw.rect(surface, (90, 120, 195), (art_rect.centerx - w_bar // 2, art_rect.y + 20 + i * 16, w_bar, 14))
-            pygame.draw.ellipse(surface, sepia_dark, (art_rect.x + 20, art_rect.bottom - 38, 224, 50))
-            self._draw_delta_emblem(surface, art_rect.centerx, art_rect.y + 68, scale=1.1, color=sepia_bright)
-
-        elif panel_id == 1:
-            # Panel 2: Siluetas de verjas góticas, cruces y niebla del cementerio
-            pygame.draw.rect(surface, (26, 22, 38), (art_rect.x, art_rect.bottom - 34, art_rect.width, 34))
-            # Cruces y lápidas
-            for gx in [96, 135, 265, 300]:
-                pygame.draw.rect(surface, sepia_main, (gx - 6, art_rect.bottom - 52, 12, 22), border_radius=3)
-                pygame.draw.line(surface, sepia_bright, (gx, art_rect.bottom - 64), (gx, art_rect.bottom - 48), 2)
-                pygame.draw.line(surface, sepia_bright, (gx - 5, art_rect.bottom - 58), (gx + 5, art_rect.bottom - 58), 2)
-            # Arco gótico central
-            arch_rect = pygame.Rect(art_rect.centerx - 28, art_rect.y + 34, 56, 72)
-            pygame.draw.rect(surface, sepia_bright, arch_rect, 2, border_top_left_radius=24, border_top_right_radius=24)
-            for bx in range(arch_rect.x + 8, arch_rect.right - 4, 9):
-                pygame.draw.line(surface, sepia_main, (bx, arch_rect.y + 10), (bx, arch_rect.bottom), 1)
-
-        else:
-            # Panel 3: Paniel frente al Alma Roja flotante y ojos en la oscuridad
-            for ex, ey in [(105, 52), (295, 56), (125, 86), (275, 84)]:
-                pygame.draw.circle(surface, (225, 50, 70), (ex - 5, ey), 2)
-                pygame.draw.circle(surface, (225, 50, 70), (ex + 5, ey), 2)
-            bob = int(math.sin(self.timer * 4.0) * 3)
-            self._draw_soul_heart(surface, art_rect.centerx, art_rect.y + 52 + bob, color=(255, 50, 75))
-            pygame.draw.circle(surface, (255, 90, 110), (art_rect.centerx, art_rect.y + 52 + bob), 16, 1)
-            if self.sprite_mgr:
-                spr = self.sprite_mgr.state_frames.get("FELIZ", self.sprite_mgr.frames)["UP"][0]
-                surface.blit(spr, (art_rect.centerx - spr.get_width() // 2, art_rect.bottom - spr.get_height() - 12))
-
-        # Doble borde estilo Deltarune en el panel ilustrado
-        pygame.draw.rect(surface, sepia_bright, art_rect, 2)
-        pygame.draw.rect(surface, sepia_dark, art_rect.inflate(-6, -6), 1)
-
-        # Texto narrativo centrado debajo con efecto máquina de escribir
-        slide = self.legend_slides[self.slide_idx]
-        rem = int(self.char_idx)
-        ty = 176
-        for line in slide["lines"]:
-            if rem <= 0:
-                break
-            vis = line[:rem]
-            rem -= len(line)
-            shd = self.font_lore.render(vis, False, (35, 30, 55))
-            txt = self.font_lore.render(vis, False, (235, 225, 195))
-            tx = (VIRTUAL_WIDTH - self.font_lore.size(line)[0]) // 2
-            surface.blit(shd, (tx + 1, ty + 1))
-            surface.blit(txt, (tx, ty))
-            ty += 18
-
-        # Indicadores inferiores
-        dots_str = "  ".join("◆" if i == self.slide_idx else "◇" for i in range(len(self.legend_slides)))
-        dots_s = self.font_small.render(dots_str, False, (140, 150, 185))
-        surface.blit(dots_s, ((VIRTUAL_WIDTH - dots_s.get_width()) // 2, 248))
-
-        hint_s = self.font_small.render("[Z / ENTER] Continuar    [X] Saltar Intro", False, (125, 135, 170))
-        surface.blit(hint_s, ((VIRTUAL_WIDTH - hint_s.get_width()) // 2, 274))
-
     def _draw_title(self, surface):
         # Fondo abismal azul/violeta oscuro estilo Deltarune
         surface.fill((6, 8, 18))
@@ -1482,17 +1351,17 @@ class DeltaruneTitleScreen:
         # Sprite de Paniel mirando hacia la Fuente Oscura
         if self.sprite_mgr:
             spr = self.sprite_mgr.state_frames.get("FELIZ", self.sprite_mgr.frames)["DOWN"][0]
-            surface.blit(spr, (cx - spr.get_width() // 2, 128))
+            surface.blit(spr, (cx - spr.get_width() // 2, 123))
 
-        # Caja de menú estilo Deltarune
-        menu_box = pygame.Rect(cx - 92, 168, 184, 78)
+        # Caja de menú estilo Deltarune (4 opciones)
+        menu_box = pygame.Rect(cx - 92, 166, 184, 92)
         pygame.draw.rect(surface, (8, 10, 22), menu_box)
         pygame.draw.rect(surface, (255, 255, 255), menu_box, 2)
         pygame.draw.rect(surface, (60, 95, 160), menu_box.inflate(-6, -6), 1)
 
         for i, opt in enumerate(self.menu_options):
             selected = (i == self.menu_idx)
-            oy = menu_box.y + 12 + i * 21
+            oy = menu_box.y + 8 + i * 20
             col = (255, 245, 90) if selected else (215, 225, 245)
             opt_s = self.font_menu.render(opt, False, col)
             ox = cx - opt_s.get_width() // 2 + (8 if selected else 0)
@@ -1534,10 +1403,7 @@ class DeltaruneTitleScreen:
             surface.blit(back_s, (cx - back_s.get_width() // 2, ctrl_box.bottom - 22))
 
     def draw(self, surface):
-        if self.state == "LEGEND":
-            self._draw_legend(surface)
-        else:
-            self._draw_title(surface)
+        self._draw_title(surface)
 
         if self.fade_alpha > 0:
             fade_s = pygame.Surface((VIRTUAL_WIDTH, VIRTUAL_HEIGHT), pygame.SRCALPHA)
@@ -1646,7 +1512,7 @@ class DeltaruneShopMenu:
                 [
                     "* '¡Ah, el [Sturdy Arm]! Mi obra maestra más intrigante.'",
                     "* '¿Refuerzo robótico o mágico? de brazo. Incrementa +5 de Ataque y +10 de Defensa.'",
-                    "* 'Al comprarlo se acopla directamente a tu brazo para potenciar tus golpes y tu guardia.'",
+                    "* 'Al comprarlo se guarda en tu bolsa de equipo ([C] -> EQUIP) para que elijas en qué ranura usarlo.'",
                 ],
             ),
             (
@@ -1693,6 +1559,8 @@ class DeltaruneShopMenu:
         if self.vendor_npc and getattr(self.vendor_npc, "sold_sturdy_arm", False):
             return True
         if player and getattr(player, "sturdy_arm_equipped", False):
+            return True
+        if player and any(g.get("name") == "Sturdy Arm" for g in getattr(player, "equipment_bag", [])):
             return True
         if player and any(it.get("name") == "Sturdy Arm" for it in player.inventory):
             return True
@@ -1786,10 +1654,10 @@ class DeltaruneShopMenu:
                 item = self.catalog[self.sub_idx]
                 if item["unique"] and self._is_sturdy_arm_sold(player):
                     self.sound_fx.play_hurt()
-                    self._set_keeper_text("* ¡Ya tienes equipado el [Sturdy Arm]! Solo existe uno en todo el Dark World.", "SMUG")
+                    self._set_keeper_text("* ¡Ya compraste el [Sturdy Arm]! Equípalo desde [C] -> EQUIP.", "SMUG")
                     return
 
-                if len(player.inventory) >= 8:
+                if (not item["unique"]) and len(player.inventory) >= 8:
                     self.sound_fx.play_hurt()
                     self._set_keeper_text("* ¡Tus bolsillos están llenos (8/8)! Usa o vende algún objeto primero.", "TALK")
                     return
@@ -1802,39 +1670,36 @@ class DeltaruneShopMenu:
                     return
 
                 player.gold -= eff_price
-                new_item = {
-                    "name": item["name"],
-                    "heal": item["heal"],
-                    "sanity_heal": item["sanity_heal"],
-                    "atk_bonus": item["atk_bonus"],
-                    "def_bonus": item["def_bonus"],
-                    "desc": item["desc"],
-                }
-                player.inventory.append(new_item)
                 if item["unique"]:
                     if self.vendor_npc is not None:
                         self.vendor_npc.sold_sturdy_arm = True
-                    if hasattr(player, "equip_in_slot"):
-                        sturdy_gear = {
-                            "name": item["name"],
-                            "slot": "BOTH",
-                            "atk_bonus": item["atk_bonus"],
-                            "def_bonus": item["def_bonus"],
-                            "desc": item["desc"],
-                        }
-                        player.equip_in_slot(0, sturdy_gear)
-                    elif not getattr(player, "sturdy_arm_equipped", False):
-                        player.sturdy_arm_equipped = True
-                        player.attack += item["atk_bonus"]
-                        player.defense += item["def_bonus"]
-                        player.weapon = item["name"]
-                        player.armor = f"{item['name']} (+10 DEF)"
+                    sturdy_gear = {
+                        "name": item["name"],
+                        "slot": "BOTH",
+                        "atk_bonus": item["atk_bonus"],
+                        "def_bonus": item["def_bonus"],
+                        "desc": item["desc"],
+                    }
+                    if hasattr(player, "add_equipment"):
+                        player.add_equipment(sturdy_gear)
+                    elif hasattr(player, "equipment_bag"):
+                        if all(g["name"] != sturdy_gear["name"] for g in player.equipment_bag):
+                            player.equipment_bag.append(sturdy_gear)
                     self.sound_fx.play_chest()
                     self._set_keeper_text(
-                        f"* ¡¡COMPRADO Y EQUIPADO: [Sturdy Arm]!! (+5 ATK y +10 DEF -> ATK {player.effective_attack}, DEF {player.effective_defense})",
+                        "* ¡Compraste [Sturdy Arm]! Se guardó en tu bolsa de equipo ([C] -> EQUIP).",
                         "SOLD",
                     )
                 else:
+                    new_item = {
+                        "name": item["name"],
+                        "heal": item["heal"],
+                        "sanity_heal": item["sanity_heal"],
+                        "atk_bonus": item["atk_bonus"],
+                        "def_bonus": item["def_bonus"],
+                        "desc": item["desc"],
+                    }
+                    player.inventory.append(new_item)
                     self.sound_fx.play_heal()
                     self._set_keeper_text(f"* ¡Gracias por tu compra! Guardaste [{item['name']}] en tu inventario.", "SOLD")
 
@@ -2122,12 +1987,14 @@ class DeltaruneShopMenu:
                 pygame.draw.line(surface, (60, 95, 150), (right_box.x + 8, right_box.bottom - 42), (right_box.right - 8, right_box.bottom - 42), 1)
                 if sel_item["atk_bonus"] or sel_item["def_bonus"]:
                     already = self._is_sturdy_arm_sold(player)
+                    equipped = getattr(player, "sturdy_arm_equipped", False)
                     cur_a = player.effective_attack
                     cur_d = player.effective_defense
                     new_a = cur_a if already else cur_a + sel_item["atk_bonus"]
                     new_d = cur_d if already else cur_d + sel_item["def_bonus"]
-                    a_txt = f"ATK: {cur_a} -> {new_a} (+{sel_item['atk_bonus']})" if not already else f"ATK: {cur_a} (EQUIPADO)"
-                    d_txt = f"DEF: {cur_d} -> {new_d} (+{sel_item['def_bonus']})" if not already else f"DEF: {cur_d} (EQUIPADO)"
+                    tag = "(EQUIPADO)" if equipped else "(EN BOLSA)"
+                    a_txt = f"ATK: {cur_a} -> {new_a} (+{sel_item['atk_bonus']})" if not already else f"ATK: {cur_a} {tag}"
+                    d_txt = f"DEF: {cur_d} -> {new_d} (+{sel_item['def_bonus']})" if not already else f"DEF: {cur_d} {tag}"
                     asurf = self.font_small.render(a_txt, False, (100, 255, 140))
                     dsurf = self.font_small.render(d_txt, False, (95, 235, 255))
                     surface.blit(asurf, (right_box.x + 10, right_box.bottom - 36))

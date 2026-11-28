@@ -31,6 +31,7 @@ from proyectiles import (
     TutorialDodgeWaveBullet,
     TutorialParryOrbBullet,
     TutorialDashWallBullet,
+    DashWallBullet,
 )
 
 # ==========================================================
@@ -210,9 +211,11 @@ class DeltaruneBattle:
         self.speech_bubble_text = ""
         self.speech_bubble_timer = 0.0
 
-        # Temporizador y balas del turno enemigo (más largo e intenso al subir de nivel; 7.8s en el tutorial para practicar bien)
+        # Temporizador y balas del turno enemigo (jefes con turnos más largos e intensos; 7.8s en el tutorial)
         self.turn_timer = 0.0
-        self.turn_duration = 7.8 if self.is_tutorial_dummy else (5.4 + min(2.2, self.lv_bonus * 0.18))
+        self.turn_duration = 7.8 if self.is_tutorial_dummy else (
+            (6.6 + min(2.4, self.lv_bonus * 0.20)) if is_boss else (5.4 + min(2.0, self.lv_bonus * 0.16))
+        )
         self.bullets = []
         self.bullet_spawn_timer = 0.0
         self.turn_prep_timer = 0.0
@@ -684,10 +687,10 @@ class DeltaruneBattle:
         else:
             self.soul_dash_dir = list(self.soul_last_dir)
 
-        self.soul_dash_timer = 0.16 if self.template_id == "maniqui_dash" else 0.14
-        self.soul_dash_cooldown = 0.55 if self.template_id == "maniqui_dash" else 0.65
+        self.soul_dash_timer = 0.16 if self.template_id == "maniqui_dash" else 0.15
+        self.soul_dash_cooldown = 0.55
         self.tutorial_dash_window = 0.30
-        self.invulnerable_timer = max(self.invulnerable_timer, 0.28 if self.template_id == "maniqui_dash" else 0.16)
+        self.invulnerable_timer = max(self.invulnerable_timer, 0.28 if self.template_id == "maniqui_dash" else 0.23)
         self.sound_fx.play_move()
 
         for _ in range(8):
@@ -1191,22 +1194,42 @@ class DeltaruneBattle:
                         self.soul_x += (vdx / vdist) * vpull
                         self.soul_y += (vdy / vdist) * vpull
 
-                # Comprobación de Parry activo (Alma Verde con [Z]):
-                if self.parry_active_timer > 0:
+                # Comprobación de Parry activo (Alma Verde con [Z]): los muros de Dash requieren atravesarlos con [X]
+                if self.parry_active_timer > 0 and not getattr(b, "requires_dash", False):
                     if b.collides_with_soul(soul_pt, soul_radius=6.2):
                         self._execute_parry(b)
                         continue
 
-                # Verificación estricta de pruebas del Tutorial (solo cuenta si se ejecuta bien SIN recibir golpe)
+                # Verificación de pruebas del Tutorial y recompensas de Dash [X] contra muros en combates reales
+                is_dashing_now = (self.soul_dash_timer > 0 or self.tutorial_dash_window > 0)
                 if self.template_id == "maniqui_esquiva" and isinstance(b, TutorialDodgeWaveBullet):
                     if b.check_clean_dodge(soul_pt):
                         self.sound_fx.play_spare()
                         self._advance_tutorial_progress("ESQUIVA")
                 elif self.template_id == "maniqui_dash" and isinstance(b, TutorialDashWallBullet):
-                    is_dashing_now = (self.soul_dash_timer > 0 or self.tutorial_dash_window > 0)
                     if b.check_clean_dash_cross(soul_pt, is_dashing_now):
                         self.sound_fx.play_spare()
                         self._advance_tutorial_progress("DASH [X]")
+                elif isinstance(b, DashWallBullet):
+                    if b.check_clean_dash_cross(soul_pt, is_dashing_now):
+                        self.sound_fx.play_graze()
+                        self.tp = min(100.0, self.tp + 8.0)
+                        self.parry_floating_txt = "¡DASH! +8% TP"
+                        self.parry_floating_pos = [float(self.soul_x), float(self.soul_y - 14)]
+                        self.parry_floating_life = 0.65
+                        for _ in range(7):
+                            ang = random.uniform(0, math.tau)
+                            spd = random.uniform(45, 110)
+                            self.parry_sparks.append({
+                                "x": self.soul_x,
+                                "y": self.soul_y,
+                                "vx": math.cos(ang) * spd,
+                                "vy": math.sin(ang) * spd,
+                                "life": 0.30,
+                                "max_life": 0.30,
+                                "size": 3,
+                                "color": (255, 235, 95) if random.random() < 0.5 else (110, 245, 255),
+                            })
 
                 if b.collides_with_soul(soul_pt, soul_radius=3.0):
                     if hasattr(b, "hit_player"):
@@ -1340,15 +1363,15 @@ class DeltaruneBattle:
         self.bullet_spawn_timer += dt
         bb = self.bullet_box
 
-        # Multiplicadores de dificultad y velocidad según el estado del enemigo y fase de jefe
+        # Multiplicadores de dificultad y velocidad según el estado del enemigo y fase de jefe (¡jefes mucho más intensos!)
         is_boss = self.enemy.get("is_boss", False)
-        is_enraged = is_boss and (self.enemy["hp"] < self.enemy["max_hp"] * 0.5)
+        is_enraged = is_boss and (self.enemy["hp"] < self.enemy["max_hp"] * 0.55)
 
-        boss_dm = 1.30 if is_boss else 1.0
-        boss_sm = 1.25 if is_boss else 1.0
+        boss_dm = 1.48 if is_boss else 1.0
+        boss_sm = 1.38 if is_boss else 1.0
         if is_enraged:
-            boss_dm *= 1.32
-            boss_sm *= 1.18
+            boss_dm *= 1.38
+            boss_sm *= 1.24
 
         dm = self.diff_mult * boss_dm
         sm = self.spd_mult * boss_sm
@@ -1507,200 +1530,465 @@ class DeltaruneBattle:
                     self.bullets.append(RitualSigilBullet(ox, oy, math.cos(ang) * spd, math.sin(ang) * spd))
 
         # ==========================================================
-        # PATRONES DEL JEFE: MORVATH EL SEPULTURERO (ALTA DIFICULTAD Y ERRÁTICOS)
+        # PATRONES DEL JEFE: MORVATH EL SEPULTURERO (ALTA DIFICULTAD Y COMBOS INTENSOS)
         # ==========================================================
         elif self.current_pattern == "scythe_sweep":
-            # Barrido de guadañas ondulantes con velocidades alternadas desde los bordes de la arena
-            if self.bullet_spawn_timer >= 0.75 / dm:
+            # Barrido cruzado de guadañas ondulantes + llamas espectrales dirigidas
+            if self.bullet_spawn_timer >= 0.56 / dm:
                 self.bullet_spawn_timer = 0.0
                 from_right = (self.soul_x < bb.centerx)
-                sy = random.uniform(bb.top + 16, bb.bottom - 16)
-                if abs(sy - self.soul_y) < 22:
-                    sy = max(bb.top + 14, min(bb.bottom - 14, self.soul_y + random.choice([-28, 28])))
+                sy = random.uniform(bb.top + 14, bb.bottom - 14)
+                if abs(sy - self.soul_y) < 18:
+                    sy = max(bb.top + 14, min(bb.bottom - 14, self.soul_y + random.choice([-24, 24])))
                 sx = bb.right + 10 if from_right else bb.left - 10
-                vx = (-92.0 if from_right else 92.0) * sm
-                self.bullets.append(ScytheWaveBullet(sx, sy, vx=vx, vy_amp=30.0, phase=random.uniform(0, math.pi * 2)))
-                if is_enraged or random.random() < 0.40:
-                    sy2 = max(bb.top + 14, min(bb.bottom - 14, sy + random.choice([-32, 32])))
-                    vx2 = (105.0 if from_right else -105.0) * sm
-                    self.bullets.append(ScytheWaveBullet(bb.left - 8 if from_right else bb.right + 8, sy2, vx=vx2, vy_amp=24.0, phase=random.uniform(0, math.pi)))
+                vx = (-106.0 if from_right else 106.0) * sm
+                self.bullets.append(ScytheWaveBullet(sx, sy, vx=vx, vy_amp=34.0, phase=random.uniform(0, math.pi * 2)))
+                sy2 = max(bb.top + 14, min(bb.bottom - 14, sy + random.choice([-30, 30])))
+                vx2 = (114.0 if from_right else -114.0) * sm
+                self.bullets.append(ScytheWaveBullet(bb.left - 8 if from_right else bb.right + 8, sy2, vx=vx2, vy_amp=26.0, phase=random.uniform(0, math.pi)))
+                if is_enraged or random.random() < 0.55:
+                    fx, fy = self._safe_spawn_pos(bb, min_dist=52.0, preferred_side="TOP")
+                    aim = math.atan2(self.soul_y - fy, self.soul_x - fx)
+                    self.bullets.append(LanternFlameBullet(fx, fy, math.cos(aim) * 96.0 * sm, math.sin(aim) * 96.0 * sm))
 
         elif self.current_pattern == "soul_lantern_ring":
-            # Anillo de llamas espectrales con apertura angular y chispas secundarias
-            if self.bullet_spawn_timer >= 1.05 / dm:
+            # Abanico denso de llamas espectrales + fuego fatuo errático desde las esquinas
+            if self.bullet_spawn_timer >= 0.82 / dm:
                 self.bullet_spawn_timer = 0.0
-                origin_x = random.uniform(bb.left + 22, bb.right - 22)
+                origin_x = random.uniform(bb.left + 20, bb.right - 20)
                 origin_y = bb.top + 8
                 aim_ang = math.atan2(self.soul_y - origin_y, self.soul_x - origin_x)
-                n_flames = 5 if not is_enraged else 6
+                n_flames = 7 if not is_enraged else 9
                 for i in range(n_flames):
-                    ang = aim_ang + (i - n_flames / 2.0) * 0.32
-                    spd = random.uniform(68.0, 88.0) * sm
+                    ang = aim_ang + (i - (n_flames - 1) / 2.0) * 0.25
+                    spd = random.uniform(80.0, 108.0) * sm
                     self.bullets.append(LanternFlameBullet(origin_x, origin_y, math.cos(ang) * spd, math.sin(ang) * spd))
-                self.bullets.append(ErraticWispBullet(origin_x, origin_y, math.cos(aim_ang) * 78.0 * sm, math.sin(aim_ang) * 78.0 * sm))
+                for side_x in (bb.left + 8, bb.right - 8):
+                    ang_c = math.atan2(self.soul_y - (bb.top + 10), self.soul_x - side_x)
+                    self.bullets.append(ErraticWispBullet(side_x, bb.top + 10, math.cos(ang_c) * 86.0 * sm, math.sin(ang_c) * 86.0 * sm))
 
         elif self.current_pattern == "grave_pillars":
-            # Columnas de lápida con clara advertencia vertical luminosa previa (0.75s)
+            # Columnas de lápida dobles/triples con lluvia de sombras acelerada
             active_pillars = len([b for b in self.bullets if isinstance(b, GravePillarBullet)])
-            max_p = 2 if is_enraged else 1
-            if active_pillars < max_p and self.bullet_spawn_timer >= 1.15 / dm:
+            max_p = 3 if is_enraged else 2
+            if active_pillars < max_p and self.bullet_spawn_timer >= 0.88 / dm:
                 self.bullet_spawn_timer = 0.0
-                tx1 = max(bb.left + 20, min(bb.right - 20, self.soul_x + random.uniform(-16, 16)))
-                self.bullets.append(GravePillarBullet(tx1, bb.bottom, warn_timer=0.75))
+                tx1 = max(bb.left + 18, min(bb.right - 18, self.soul_x + random.uniform(-12, 12)))
+                self.bullets.append(GravePillarBullet(tx1, bb.bottom, warn_timer=0.62))
+                if is_enraged:
+                    tx2 = max(bb.left + 18, min(bb.right - 18, tx1 + random.choice([-46, 46])))
+                    self.bullets.append(GravePillarBullet(tx2, bb.bottom, warn_timer=0.68))
                 self.sound_fx.play_warning()
-                rx = random.uniform(bb.left + 12, bb.right - 12)
-                b_rain = ShadowRainBullet(rx, bb.top + 2, phase=random.uniform(0, math.pi * 2))
-                b_rain.vy = (65.0 + random.uniform(0, 20)) * sm
-                self.bullets.append(b_rain)
+                for _ in range(2):
+                    rx = random.uniform(bb.left + 12, bb.right - 12)
+                    b_rain = ShadowRainBullet(rx, bb.top + 2, phase=random.uniform(0, math.pi * 2))
+                    b_rain.vy = (78.0 + random.uniform(0, 26)) * sm
+                    self.bullets.append(b_rain)
 
         elif self.current_pattern == "death_scythe_boomerang":
-            # Guadañas bumerán que cruzan la arena desde el borde exterior
+            # Doble guadaña bumerán en pinza + daga ritual teledirigida
             active_boomerangs = len([b for b in self.bullets if isinstance(b, BoomerangScytheBullet)])
-            max_b = 2 if is_enraged else 1
-            if active_boomerangs < max_b and self.bullet_spawn_timer >= 1.20 / dm:
+            max_b = 3 if is_enraged else 2
+            if active_boomerangs < max_b and self.bullet_spawn_timer >= 0.92 / dm:
                 self.bullet_spawn_timer = 0.0
                 side = "RIGHT" if self.soul_x < bb.centerx else "LEFT"
-                if side == "LEFT":
-                    sx, sy = bb.left - 8, random.uniform(bb.top + 16, bb.bottom - 16)
-                else:
-                    sx, sy = bb.right + 8, random.uniform(bb.top + 16, bb.bottom - 16)
+                sx = bb.left - 8 if side == "LEFT" else bb.right + 8
+                sy = random.uniform(bb.top + 16, bb.bottom - 16)
                 ang = math.atan2(self.soul_y - sy, self.soul_x - sx)
-                spd = 120.0 * sm
-                self.bullets.append(BoomerangScytheBullet(sx, sy, math.cos(ang) * spd, math.sin(ang) * spd, decel=145.0))
-                if is_enraged and active_boomerangs == 0:
-                    ang2 = ang + random.choice([-0.40, 0.40])
-                    self.bullets.append(BoomerangScytheBullet(sx, sy, math.cos(ang2) * spd * 0.9, math.sin(ang2) * spd * 0.9, decel=135.0))
+                spd = 136.0 * sm
+                self.bullets.append(BoomerangScytheBullet(sx, sy, math.cos(ang) * spd, math.sin(ang) * spd, decel=155.0))
+                ang2 = ang + random.choice([-0.34, 0.34])
+                self.bullets.append(BoomerangScytheBullet(sx, sy, math.cos(ang2) * spd * 0.92, math.sin(ang2) * spd * 0.92, decel=142.0))
+                if is_enraged or random.random() < 0.60:
+                    dx, dy = self._safe_spawn_pos(bb, min_dist=52.0, preferred_side="TOP")
+                    self.bullets.append(CultDaggerBullet(dx, dy, self.soul_x, self.soul_y, speed=158.0 * sm))
 
         elif self.current_pattern == "funeral_bell_toll":
-            # Ondas sónicas expansivas de campana fúnebre con apertura angular dodgeable
+            # Ondas sónicas rápidas de campana fúnebre + fuego cruzado de ánimas desde ambas esquinas
             active_shockwaves = len([b for b in self.bullets if isinstance(b, FuneralBellShockwave)])
-            if active_shockwaves < 1 and self.bullet_spawn_timer >= 1.35 / dm:
+            if active_shockwaves < (2 if is_enraged else 1) and self.bullet_spawn_timer >= 1.02 / dm:
                 self.bullet_spawn_timer = 0.0
                 cx = bb.centerx
                 cy = bb.top + 8
-                gap_a = math.atan2(self.soul_y - cy, self.soul_x - cx)
-                self.bullets.append(FuneralBellShockwave(cx, cy, expand_speed=72.0 * sm, gap_angle=gap_a, gap_size=1.20, start_delay=0.45))
+                gap_a = math.atan2(self.soul_y - cy, self.soul_x - cx) + random.uniform(-0.35, 0.35)
+                self.bullets.append(FuneralBellShockwave(cx, cy, expand_speed=86.0 * sm, gap_angle=gap_a, gap_size=1.02, start_delay=0.38))
                 self.sound_fx.play_warning()
-                corner_x = bb.left + 6 if self.soul_x > bb.centerx else bb.right - 6
-                corner_y = bb.top + 8
-                ang_c = math.atan2(self.soul_y - corner_y, self.soul_x - corner_x)
-                self.bullets.append(ErraticWispBullet(corner_x, corner_y, math.cos(ang_c) * 75.0 * sm, math.sin(ang_c) * 75.0 * sm))
+                for corner_x in (bb.left + 8, bb.right - 8):
+                    corner_y = bb.top + 8
+                    ang_c = math.atan2(self.soul_y - corner_y, self.soul_x - corner_x)
+                    self.bullets.append(ErraticWispBullet(corner_x, corner_y, math.cos(ang_c) * 88.0 * sm, math.sin(ang_c) * 88.0 * sm))
 
         elif self.current_pattern == "graveyard_cataclysm":
-            # Cataclismo de guadañas rebotantes en esquinas lejanas + columnas del sepulcro
-            max_bouncers = 2 if is_enraged else 1
+            # Cataclismo agresivo de múltiples guadañas rebotantes + pilares que persiguen al jugador
+            max_bouncers = 4 if is_enraged else 3
             bouncers_alive = len([b for b in self.bullets if isinstance(b, ChaosBouncingScythe)])
             active_pillars = len([b for b in self.bullets if isinstance(b, GravePillarBullet)])
-            if bouncers_alive < max_bouncers and self.bullet_spawn_timer >= 1.25 / dm:
+            if bouncers_alive < max_bouncers and self.bullet_spawn_timer >= 0.92 / dm:
                 self.bullet_spawn_timer = 0.0
-                ang = random.uniform(0.35, 1.15) + random.choice([0, math.pi / 2, math.pi, math.pi * 1.5])
-                spd = 105.0 * sm
+                ang = random.uniform(0.32, 1.18) + random.choice([0, math.pi / 2, math.pi, math.pi * 1.5])
+                spd = 118.0 * sm
                 spawn_x = bb.left + 14 if self.soul_x > bb.centerx else bb.right - 14
                 spawn_y = bb.top + 14
-                self.bullets.append(ChaosBouncingScythe(spawn_x, spawn_y, math.cos(ang) * spd, math.sin(ang) * spd, max_bounces=3))
-                if active_pillars < 1:
-                    pill_x = bb.left + 24 if self.soul_x > bb.centerx else bb.right - 24
-                    self.bullets.append(GravePillarBullet(pill_x, bb.bottom, warn_timer=0.75))
+                self.bullets.append(ChaosBouncingScythe(spawn_x, spawn_y, math.cos(ang) * spd, math.sin(ang) * spd, max_bounces=5))
+                if active_pillars < (2 if is_enraged else 1):
+                    pill_x = max(bb.left + 18, min(bb.right - 18, self.soul_x + random.uniform(-14, 14)))
+                    self.bullets.append(GravePillarBullet(pill_x, bb.bottom, warn_timer=0.64))
                     self.sound_fx.play_warning()
 
         elif self.current_pattern == "frenzy_soul_hunt":
-            # Ánimas teledirigidas que rastrean al alma desde el borde opuesto
+            # Doble ánima teledirigida + tridente de llamas espectrales
             active_homing = len([b for b in self.bullets if isinstance(b, HomingSoulOrb)])
-            if active_homing < 1 and self.bullet_spawn_timer >= 1.15 / dm:
+            if active_homing < (3 if is_enraged else 2) and self.bullet_spawn_timer >= 0.88 / dm:
                 self.bullet_spawn_timer = 0.0
                 ox = bb.right - 8 if self.soul_x < bb.centerx else bb.left + 8
                 oy = random.uniform(bb.top + 16, bb.bottom - 16)
-                self.bullets.append(HomingSoulOrb(ox, oy, speed=85.0 * sm, turn_rate=3.2, lifespan=3.0))
+                self.bullets.append(HomingSoulOrb(ox, oy, speed=98.0 * sm, turn_rate=3.8, lifespan=3.2))
                 aim = math.atan2(self.soul_y - oy, self.soul_x - ox)
-                self.bullets.append(LanternFlameBullet(ox, oy, math.cos(aim) * 88.0 * sm, math.sin(aim) * 88.0 * sm))
+                for off_a in (-0.28, 0.0, 0.28):
+                    self.bullets.append(LanternFlameBullet(ox, oy, math.cos(aim + off_a) * 98.0 * sm, math.sin(aim + off_a) * 98.0 * sm))
 
         # ==========================================================
         # PATRONES DEL JEFE SUPREMO: VAELKOR, REY DEL CRISTAL NEGRO (MÁXIMA DIFICULTAD)
         # ==========================================================
         elif self.current_pattern == "black_flame_barrage":
-            # Ráfaga implacable de Fuego Oscuro desde los bordes alejados del alma
-            if self.bullet_spawn_timer >= 0.55 / dm:
+            # Ráfaga implacable en abanico de Fuego Oscuro + chispa errática
+            if self.bullet_spawn_timer >= 0.40 / dm:
                 self.bullet_spawn_timer = 0.0
                 side = "TOP" if random.random() < 0.4 else ("RIGHT" if self.soul_x < bb.centerx else "LEFT")
                 sx, sy = self._safe_spawn_pos(bb, min_dist=50.0, preferred_side=side)
-                ang = math.atan2(self.soul_y - sy, self.soul_x - sx) + random.uniform(-0.18, 0.18)
-                spd = (90.0 + random.uniform(0, 22.0)) * sm
-                self.bullets.append(DarkFlameBullet(sx, sy, math.cos(ang) * spd, math.sin(ang) * spd, phase=random.uniform(0, 6.28)))
+                aim = math.atan2(self.soul_y - sy, self.soul_x - sx)
+                offsets = (-0.24, 0.0, 0.24) if is_enraged else (-0.16, 0.16)
+                for off_a in offsets:
+                    spd = (102.0 + random.uniform(0, 26.0)) * sm
+                    self.bullets.append(DarkFlameBullet(sx, sy, math.cos(aim + off_a) * spd, math.sin(aim + off_a) * spd, phase=random.uniform(0, 6.28)))
 
         elif self.current_pattern == "crystal_shatter_storm":
-            # Tormenta de esquirlas de cristal oscuro en espirales dobles alternas
-            if self.bullet_spawn_timer >= 1.05 / dm:
+            # Tormenta densa de esquirlas de cristal oscuro en espirales dobles contrarrotantes
+            if self.bullet_spawn_timer >= 0.82 / dm:
                 self.bullet_spawn_timer = 0.0
                 ox, oy = self._safe_spawn_pos(bb, min_dist=50.0, preferred_side="TOP")
-                n_shards = 7 if not is_enraged else 8
-                base_a = self.anim_time * 2.5
-                spd = 82.0 * sm
+                n_shards = 9 if not is_enraged else 11
+                base_a = self.anim_time * 3.0
+                spd = 94.0 * sm
                 for i in range(n_shards):
                     a = base_a + i * (2 * math.pi / n_shards)
-                    self.bullets.append(ShatterCrystalBullet(ox, oy, math.cos(a) * spd, math.sin(a) * spd, spin_speed=random.uniform(6.0, 10.0)))
+                    self.bullets.append(ShatterCrystalBullet(ox, oy, math.cos(a) * spd, math.sin(a) * spd, spin_speed=random.uniform(7.0, 11.0)))
+                if is_enraged:
+                    for i in range(4):
+                        a2 = -base_a + i * (math.pi / 2.0)
+                        self.bullets.append(DarkFlameBullet(ox, oy, math.cos(a2) * 86.0 * sm, math.sin(a2) * 86.0 * sm))
 
         elif self.current_pattern == "void_cleave_laser":
-            # Grietas dimensionales con advertencia clara de 0.70s y estallido horizontal
+            # Doble grieta dimensional con aviso breve + esquirlas dirigidas
             active_cleaves = len([b for b in self.bullets if isinstance(b, VoidCleaveBullet)])
-            if active_cleaves < 1 and self.bullet_spawn_timer >= 1.30 / dm:
+            if active_cleaves < (3 if is_enraged else 2) and self.bullet_spawn_timer >= 0.92 / dm:
                 self.bullet_spawn_timer = 0.0
                 ty = max(bb.top + 16, min(bb.bottom - 16, self.soul_y))
-                self.bullets.append(VoidCleaveBullet(bb, ty, warn_time=0.70, duration=1.05))
+                self.bullets.append(VoidCleaveBullet(bb, ty, warn_time=0.58, duration=1.00))
+                if is_enraged:
+                    ty2 = max(bb.top + 16, min(bb.bottom - 16, ty + random.choice([-44, 44])))
+                    self.bullets.append(VoidCleaveBullet(bb, ty2, warn_time=0.66, duration=1.00))
                 self.sound_fx.play_warning()
-                rx = random.uniform(bb.left + 14, bb.right - 14)
-                self.bullets.append(ShatterCrystalBullet(rx, bb.top + 4, random.uniform(-20, 20), 82.0 * sm))
+                for _ in range(2):
+                    rx = random.uniform(bb.left + 14, bb.right - 14)
+                    self.bullets.append(ShatterCrystalBullet(rx, bb.top + 4, random.uniform(-28, 28), 96.0 * sm))
 
         elif self.current_pattern == "eclipse_gravity_vortex":
-            # Vórtice abismal que se forma en la parte superior central (lejos del centro)
+            # Vórtice gravitacional del Eclipse + espiral densa de fuego oscuro + láser periódico
             if self.bullet_spawn_timer >= 0:
                 vortices = [b for b in self.bullets if isinstance(b, DarkGravityVortexBullet)]
-                vortex_y = bb.top + 28
+                vortex_y = bb.top + 30
                 if not vortices:
-                    self.bullets.append(DarkGravityVortexBullet(bb.centerx, vortex_y, duration=4.5, forming_timer=0.70))
+                    self.bullets.append(DarkGravityVortexBullet(bb.centerx, vortex_y, duration=5.5, forming_timer=0.58))
                     self.sound_fx.play_warning()
-                if self.bullet_spawn_timer >= 0.75 / dm:
+                if self.bullet_spawn_timer >= 0.54 / dm:
                     self.bullet_spawn_timer = 0.0
                     vx, vy = bb.centerx, vortex_y
-                    n_sparks = 3
-                    base_ang = self.anim_time * 2.8
+                    n_sparks = 6 if is_enraged else 5
+                    base_ang = self.anim_time * 3.4
                     for i in range(n_sparks):
                         a = base_ang + i * (math.pi * 2 / n_sparks)
-                        spd = random.uniform(70.0, 92.0) * sm
+                        spd = random.uniform(82.0, 108.0) * sm
                         self.bullets.append(DarkFlameBullet(vx, vy, math.cos(a) * spd, math.sin(a) * spd))
 
         elif self.current_pattern == "fractured_mirror_barrage":
-            # Racimos de cristal que vuelan, frenan y estallan en 6 esquirlas tras advertencia
+            # Racimos dobles/triples de cristal explosivo + fuego oscuro lateral
             active_clusters = len([b for b in self.bullets if isinstance(b, FracturedMirrorShards)])
-            if active_clusters < 1 and self.bullet_spawn_timer >= 1.25 / dm:
+            if active_clusters < (3 if is_enraged else 2) and self.bullet_spawn_timer >= 0.90 / dm:
                 self.bullet_spawn_timer = 0.0
                 side = "TOP" if random.random() < 0.4 else ("RIGHT" if self.soul_x < bb.centerx else "LEFT")
                 sx, sy = self._safe_spawn_pos(bb, min_dist=50.0, preferred_side=side)
                 ang = math.atan2(self.soul_y - sy, self.soul_x - sx)
-                spd = 115.0 * sm
+                spd = 130.0 * sm
                 self.bullets.append(FracturedMirrorShards(sx, sy, math.cos(ang) * spd, math.sin(ang) * spd))
+                ox, oy = self._safe_spawn_pos(bb, min_dist=54.0, preferred_side="RIGHT" if side == "LEFT" else "LEFT")
+                a2 = math.atan2(self.soul_y - oy, self.soul_x - ox)
+                self.bullets.append(DarkFlameBullet(ox, oy, math.cos(a2) * 98.0 * sm, math.sin(a2) * 98.0 * sm))
 
         elif self.current_pattern == "abyssal_cross_lasers":
-            # Rejilla de láseres dimensionales cruzados con carril de advertencia de 0.75s
+            # Rejilla múltiple de láseres dimensionales cruzados + esquirlas de presión
             active_lasers = len([b for b in self.bullets if isinstance(b, LaserCrossGridBullet)])
-            if active_lasers == 0 and self.bullet_spawn_timer >= 1.40 / dm:
+            if active_lasers <= (2 if is_enraged else 0) and self.bullet_spawn_timer >= 1.02 / dm:
                 self.bullet_spawn_timer = 0.0
                 target_y = max(bb.top + 16, min(bb.bottom - 16, self.soul_y))
                 target_x = max(bb.left + 16, min(bb.right - 16, self.soul_x))
-                self.bullets.append(LaserCrossGridBullet(bb, target_y, is_vertical=False, warn_time=0.75, duration=1.10))
-                self.bullets.append(LaserCrossGridBullet(bb, target_x, is_vertical=True, warn_time=0.75, duration=1.10))
+                self.bullets.append(LaserCrossGridBullet(bb, target_y, is_vertical=False, warn_time=0.60, duration=1.05))
+                self.bullets.append(LaserCrossGridBullet(bb, target_x, is_vertical=True, warn_time=0.60, duration=1.05))
+                if is_enraged:
+                    alt_y = max(bb.top + 18, min(bb.bottom - 18, target_y + random.choice([-42, 42])))
+                    self.bullets.append(LaserCrossGridBullet(bb, alt_y, is_vertical=False, warn_time=0.68, duration=1.05))
+                for _ in range(2):
+                    sx, sy = self._safe_spawn_pos(bb, min_dist=52.0, preferred_side="TOP")
+                    a = math.atan2(self.soul_y - sy, self.soul_x - sx)
+                    self.bullets.append(ShatterCrystalBullet(sx, sy, math.cos(a) * 92.0 * sm, math.sin(a) * 92.0 * sm))
                 self.sound_fx.play_warning()
 
         elif self.current_pattern == "apocalypse_crystal_rain":
-            # Lluvia apocalíptica de esquirlas oscuras y fuego errático cayendo desde el techo
-            if self.bullet_spawn_timer >= 0.42 / dm:
+            # Lluvia apocalíptica frenética de fuego oscuro, esquirlas y chispas erráticas
+            if self.bullet_spawn_timer >= 0.28 / dm:
                 self.bullet_spawn_timer = 0.0
-                rx = random.uniform(bb.left + 12, bb.right - 12)
-                if random.random() < 0.60:
-                    self.bullets.append(DarkFlameBullet(rx, bb.top + 4, random.uniform(-20, 20), (88.0 + random.uniform(0, 24)) * sm))
-                else:
-                    self.bullets.append(ShatterCrystalBullet(rx, bb.top + 4, random.uniform(-28, 28), (84.0 + random.uniform(0, 22)) * sm))
-                if random.random() < 0.20:
-                    self.bullets.append(ErraticWispBullet(rx, bb.top + 4, random.uniform(-35, 35), 88.0 * sm))
+                for _ in range(2 if is_enraged else 1):
+                    rx = random.uniform(bb.left + 12, bb.right - 12)
+                    if random.random() < 0.55:
+                        self.bullets.append(DarkFlameBullet(rx, bb.top + 4, random.uniform(-28, 28), (102.0 + random.uniform(0, 30)) * sm))
+                    else:
+                        self.bullets.append(ShatterCrystalBullet(rx, bb.top + 4, random.uniform(-34, 34), (96.0 + random.uniform(0, 28)) * sm))
+                if random.random() < 0.35:
+                    sx, sy = self._safe_spawn_pos(bb, min_dist=50.0, preferred_side=random.choice(["LEFT", "RIGHT"]))
+                    a = math.atan2(self.soul_y - sy, self.soul_x - sx)
+                    self.bullets.append(ErraticWispBullet(sx, sy, math.cos(a) * 96.0 * sm, math.sin(a) * 96.0 * sm))
+
+        # ==========================================================
+        # PATRONES CON MUROS DE DASH [X] (ENEMIGOS DEL CEMENTERIO, DARK WORLD Y JEFES)
+        # ==========================================================
+        elif self.current_pattern == "miasma_dash_waves":
+            # Oleadas de miasma/cadenas de ancho completo que se atraviesan con Dash [X]
+            interval = max(1.05, 1.38 / dm)
+            if self.bullet_spawn_timer >= interval:
+                self.bullet_spawn_timer = 0.0
+                self.tutorial_wave_side = not self.tutorial_wave_side
+                horiz = random.choice([True, False])
+                aura = (255, 75, 130) if self.template_id == "fantasmino" else (185, 65, 245)
+                self.bullets.append(
+                    DashWallBullet(
+                        bb,
+                        horizontal_sweep=horiz,
+                        from_end=self.tutorial_wave_side,
+                        speed=min(148.0, 112.0 * sm),
+                        warn_timer=0.44,
+                        accent_color=(255, 215, 70),
+                        aura_color=aura,
+                    )
+                )
+                self.sound_fx.play_warning()
+
+        elif self.current_pattern == "crystal_dash_sweep":
+            # Barridos de filo dorado/plateado por toda la arena: cruzar con Dash [X]
+            interval = max(1.02, 1.32 / dm)
+            if self.bullet_spawn_timer >= interval:
+                self.bullet_spawn_timer = 0.0
+                self.tutorial_wave_side = not self.tutorial_wave_side
+                horiz = random.choice([True, False])
+                aura = (175, 130, 255) if self.template_id == "rudinn" else (140, 65, 225)
+                self.bullets.append(
+                    DashWallBullet(
+                        bb,
+                        horizontal_sweep=horiz,
+                        from_end=self.tutorial_wave_side,
+                        speed=min(152.0, 116.0 * sm),
+                        warn_timer=0.42,
+                        accent_color=(255, 222, 85),
+                        aura_color=aura,
+                    )
+                )
+                self.sound_fx.play_warning()
+
+        elif self.current_pattern == "neon_firewall_dash":
+            # Cortafuegos cibernéticos del Dark World: muros alternos + chispa neón ocasional
+            interval = max(0.98, 1.24 / dm)
+            if self.bullet_spawn_timer >= interval:
+                self.bullet_spawn_timer = 0.0
+                self.tutorial_wave_side = not self.tutorial_wave_side
+                horiz = random.choice([True, False])
+                aura = (75, 240, 255) if self.template_id == "centinela_neon" else (225, 85, 255)
+                self.bullets.append(
+                    DashWallBullet(
+                        bb,
+                        horizontal_sweep=horiz,
+                        from_end=self.tutorial_wave_side,
+                        speed=min(158.0, 122.0 * sm),
+                        warn_timer=0.40,
+                        accent_color=(255, 225, 75),
+                        aura_color=aura,
+                    )
+                )
+                if random.random() < 0.45:
+                    sx, sy = self._safe_spawn_pos(bb, min_dist=54.0, preferred_side="TOP")
+                    ang = math.atan2(self.soul_y - sy, self.soul_x - sx)
+                    self.bullets.append(CyberNeonGlitchBullet(sx, sy, math.cos(ang) * 74.0 * sm, math.sin(ang) * 74.0 * sm))
+                self.sound_fx.play_warning()
+
+        elif self.current_pattern == "reaper_dash_shockwave":
+            # Jefe Morvath: ondas fúnebres de guadaña rápidas + fuego espectral en pinza
+            interval = max(0.88, 1.08 / dm)
+            if self.bullet_spawn_timer >= interval:
+                self.bullet_spawn_timer = 0.0
+                self.tutorial_wave_side = not self.tutorial_wave_side
+                horiz = random.choice([True, False])
+                self.bullets.append(
+                    DashWallBullet(
+                        bb,
+                        horizontal_sweep=horiz,
+                        from_end=self.tutorial_wave_side,
+                        speed=min(176.0, 134.0 * sm),
+                        warn_timer=0.38,
+                        accent_color=(255, 205, 65),
+                        aura_color=(235, 55, 90),
+                    )
+                )
+                for _ in range(2 if is_enraged else 1):
+                    sx, sy = self._safe_spawn_pos(bb, min_dist=54.0, preferred_side="TOP")
+                    ang = math.atan2(self.soul_y - sy, self.soul_x - sx) + random.uniform(-0.22, 0.22)
+                    self.bullets.append(LanternFlameBullet(sx, sy, math.cos(ang) * 92.0 * sm, math.sin(ang) * 92.0 * sm))
+                self.sound_fx.play_warning()
+
+        elif self.current_pattern == "eclipse_dash_fracture":
+            # Jefe Supremo Vaelkor: fracturas dimensionales rápidas + ráfaga de esquirlas
+            interval = max(0.86, 1.02 / dm)
+            if self.bullet_spawn_timer >= interval:
+                self.bullet_spawn_timer = 0.0
+                self.tutorial_wave_side = not self.tutorial_wave_side
+                horiz = random.choice([True, False])
+                self.bullets.append(
+                    DashWallBullet(
+                        bb,
+                        horizontal_sweep=horiz,
+                        from_end=self.tutorial_wave_side,
+                        speed=min(182.0, 140.0 * sm),
+                        warn_timer=0.36,
+                        accent_color=(255, 220, 75),
+                        aura_color=(220, 35, 105),
+                    )
+                )
+                for _ in range(2):
+                    sx, sy = self._safe_spawn_pos(bb, min_dist=54.0, preferred_side=random.choice(["TOP", "LEFT", "RIGHT"]))
+                    ang = math.atan2(self.soul_y - sy, self.soul_x - sx) + random.uniform(-0.20, 0.20)
+                    self.bullets.append(ShatterCrystalBullet(sx, sy, math.cos(ang) * 94.0 * sm, math.sin(ang) * 94.0 * sm))
+                self.sound_fx.play_warning()
+
+        # ==========================================================
+        # PATRONES DEL JEFE SECRETO DEL DARK WORLD: NYXAR (TRONO OSCURO)
+        # ==========================================================
+        elif self.current_pattern == "nyx_neon_dash_gauntlet":
+            # Sucesión rápida de muros cibernéticos de Dash [X] + virus glitch laterales
+            interval = max(0.86, 1.00 / dm)
+            if self.bullet_spawn_timer >= interval:
+                self.bullet_spawn_timer = 0.0
+                self.tutorial_wave_side = not self.tutorial_wave_side
+                horiz = random.choice([True, False])
+                aura = (75, 245, 255) if self.tutorial_wave_side else (255, 75, 215)
+                self.bullets.append(
+                    DashWallBullet(
+                        bb,
+                        horizontal_sweep=horiz,
+                        from_end=self.tutorial_wave_side,
+                        speed=min(184.0, 138.0 * sm),
+                        warn_timer=0.36,
+                        accent_color=(255, 232, 85),
+                        aura_color=aura,
+                    )
+                )
+                for _ in range(2 if is_enraged else 1):
+                    sx, sy = self._safe_spawn_pos(bb, min_dist=54.0, preferred_side=random.choice(["TOP", "LEFT", "RIGHT"]))
+                    ang = math.atan2(self.soul_y - sy, self.soul_x - sx) + random.uniform(-0.22, 0.22)
+                    self.bullets.append(CyberNeonGlitchBullet(sx, sy, math.cos(ang) * 92.0 * sm, math.sin(ang) * 92.0 * sm))
+                self.sound_fx.play_warning()
+
+        elif self.current_pattern == "nyx_fountain_crossfire":
+            # Láseres cruzados de la Fuente Oscura + lluvia radial de naipes del caos
+            active_lasers = len([b for b in self.bullets if isinstance(b, LaserCrossGridBullet)])
+            if active_lasers <= (2 if is_enraged else 0) and self.bullet_spawn_timer >= 0.96 / dm:
+                self.bullet_spawn_timer = 0.0
+                ty = max(bb.top + 16, min(bb.bottom - 16, self.soul_y))
+                tx = max(bb.left + 16, min(bb.right - 16, self.soul_x))
+                self.bullets.append(LaserCrossGridBullet(bb, ty, is_vertical=False, warn_time=0.60, duration=1.00))
+                self.bullets.append(LaserCrossGridBullet(bb, tx, is_vertical=True, warn_time=0.60, duration=1.00))
+                ox, oy = self._safe_spawn_pos(bb, min_dist=52.0, preferred_side="TOP")
+                n_cards = 6 if is_enraged else 4
+                base_a = self.anim_time * 2.7
+                for i in range(n_cards):
+                    a = base_a + i * (math.tau / n_cards)
+                    self.bullets.append(
+                        ErraticChaosCardBullet(
+                            ox, oy, math.cos(a) * 86.0 * sm, math.sin(a) * 86.0 * sm,
+                            suit="DIAMOND" if i % 2 == 0 else "SPADE",
+                        )
+                    )
+                self.sound_fx.play_warning()
+
+        elif self.current_pattern == "nyx_abyssal_pendulum":
+            # Guadañas rebotantes + ánima teledirigida + grieta horizontal de energía oscura
+            bouncers = len([b for b in self.bullets if isinstance(b, ChaosBouncingScythe)])
+            cleaves = len([b for b in self.bullets if isinstance(b, VoidCleaveBullet)])
+            homing = len([b for b in self.bullets if isinstance(b, HomingSoulOrb)])
+            if self.bullet_spawn_timer >= 0.86 / dm:
+                self.bullet_spawn_timer = 0.0
+                if bouncers < (4 if is_enraged else 3):
+                    sx, sy = self._safe_spawn_pos(bb, min_dist=54.0, preferred_side="TOP")
+                    ang = random.uniform(0.35, 2.75)
+                    self.bullets.append(ChaosBouncingScythe(sx, sy, math.cos(ang) * 116.0 * sm, math.sin(ang) * 116.0 * sm, max_bounces=5))
+                if cleaves < 1:
+                    ty = max(bb.top + 16, min(bb.bottom - 16, self.soul_y))
+                    self.bullets.append(VoidCleaveBullet(bb, ty, warn_time=0.58, duration=0.95))
+                    self.sound_fx.play_warning()
+                if homing < (2 if is_enraged else 1):
+                    ox = bb.right - 8 if self.soul_x < bb.centerx else bb.left + 8
+                    oy = random.uniform(bb.top + 16, bb.bottom - 16)
+                    self.bullets.append(HomingSoulOrb(ox, oy, speed=96.0 * sm, turn_rate=3.7, lifespan=3.0))
+
+        elif self.current_pattern == "nyx_glitch_storm":
+            # Tormenta cibernética de paquetes glitch + racimos explosivos de cristal neón
+            if self.bullet_spawn_timer >= 0.30 / dm:
+                self.bullet_spawn_timer = 0.0
+                side = random.choice(["TOP", "LEFT", "RIGHT"])
+                sx, sy = self._safe_spawn_pos(bb, min_dist=50.0, preferred_side=side)
+                ang = math.atan2(self.soul_y - sy, self.soul_x - sx) + random.uniform(-0.28, 0.28)
+                spd = random.uniform(92.0, 126.0) * sm
+                self.bullets.append(CyberNeonGlitchBullet(sx, sy, math.cos(ang) * spd, math.sin(ang) * spd))
+                clusters = len([b for b in self.bullets if isinstance(b, FracturedMirrorShards)])
+                if clusters < (2 if is_enraged else 1) and random.random() < 0.38:
+                    cx, cy = self._safe_spawn_pos(bb, min_dist=54.0, preferred_side="TOP")
+                    a2 = math.atan2(self.soul_y - cy, self.soul_x - cx)
+                    self.bullets.append(FracturedMirrorShards(cx, cy, math.cos(a2) * 124.0 * sm, math.sin(a2) * 124.0 * sm))
+
+        elif self.current_pattern == "nyx_black_sun_collapse":
+            # Vórtice de la Fuente Oscura + muros de Dash [X] + anillo de llamas oscuras
+            vortices = [b for b in self.bullets if isinstance(b, DarkGravityVortexBullet)]
+            vortex_y = bb.top + 30
+            if not vortices:
+                self.bullets.append(DarkGravityVortexBullet(bb.centerx, vortex_y, duration=5.8, forming_timer=0.56))
+                self.sound_fx.play_warning()
+            interval = max(0.95, 1.15 / dm)
+            if self.bullet_spawn_timer >= interval:
+                self.bullet_spawn_timer = 0.0
+                self.tutorial_wave_side = not self.tutorial_wave_side
+                self.bullets.append(
+                    DashWallBullet(
+                        bb,
+                        horizontal_sweep=True,
+                        from_end=self.tutorial_wave_side,
+                        speed=min(170.0, 128.0 * sm),
+                        warn_timer=0.40,
+                        accent_color=(255, 232, 85),
+                        aura_color=(85, 245, 255),
+                    )
+                )
+                n_ring = 5 if is_enraged else 4
+                base_a = self.anim_time * 3.1
+                for i in range(n_ring):
+                    a = base_a + i * (math.tau / n_ring)
+                    self.bullets.append(DarkFlameBullet(bb.centerx, vortex_y, math.cos(a) * 90.0 * sm, math.sin(a) * 90.0 * sm))
+                self.sound_fx.play_warning()
 
     # ==========================================================
     # RENDERIZADO DEL ESCENARIO Y UI DE COMBATE DELTARUNE
@@ -1998,16 +2286,17 @@ class DeltaruneBattle:
         surface.blit(pct_lbl, (tx - 3, ty + th + 3))
 
     def _draw_enemy_hud(self, surface, cx, cy):
-        """Dibuja el nombre del enemigo y las dos barras paralelas de Deltarune: HP y MERCY."""
+        """Dibuja el nombre del enemigo y las dos barras paralelas de Deltarune: HP y MERCY, siempre dentro de pantalla."""
         is_spared = (self.enemy["mercy"] >= 100)
         name_color = (255, 240, 70) if is_spared else (255, 255, 255)
         prefix = "★ " if is_spared else ""
-        lv_tag = f" [NV+{self.lv_bonus}]" if getattr(self, "lv_bonus", 0) > 0 else ""
+        lv_tag = f" +{self.lv_bonus}" if (getattr(self, "lv_bonus", 0) > 0 and not getattr(self, "is_tutorial_dummy", False)) else ""
         txt_name = self.font_hud.render(f"{prefix}{self.enemy['name']}{lv_tag}", False, name_color)
-        surface.blit(txt_name, (cx - txt_name.get_width() // 2, cy - 8))
+        name_x = max(8, min(VIRTUAL_WIDTH - 8 - txt_name.get_width(), int(cx - txt_name.get_width() // 2)))
+        surface.blit(txt_name, (name_x, cy - 8))
 
         bw, bh = 58, 5
-        bx = cx - bw // 2
+        bx = max(8, min(VIRTUAL_WIDTH - 8 - bw, int(cx - bw // 2)))
         hp_y = cy + 6
         mercy_y = cy + 14
 
@@ -2024,7 +2313,8 @@ class DeltaruneBattle:
         pygame.draw.rect(surface, (255, 200, 90), (bx, mercy_y, bw, bh), 1)
 
         m_lbl = self.font_hud.render(f"MERCY {self.enemy['mercy']}%", False, (255, 230, 75) if is_spared else (210, 185, 150))
-        surface.blit(m_lbl, (cx - m_lbl.get_width() // 2, mercy_y + 7))
+        ml_x = max(8, min(VIRTUAL_WIDTH - 8 - m_lbl.get_width(), int(cx - m_lbl.get_width() // 2)))
+        surface.blit(m_lbl, (ml_x, mercy_y + 7))
 
     def _draw_speech_bubble(self, surface, enemy_x, enemy_y, text):
         """Dibuja el bocadillo de diálogo del enemigo POR ENCIMA de su cabeza sin taparlo jamás."""

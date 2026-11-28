@@ -72,7 +72,7 @@ class CharacterSpriteManager:
         return frames
 
     def _load_stat_portrait(self, folder):
-        """Carga y recorta Estadisticas.png en proporción 1:1 original (sin reescalar ni deformar) y apoyado en la base."""
+        """Carga y recorta el retrato en proporción 1:1 original del diseño auténtico (sin reescalar ni deformar)."""
         if not os.path.exists(folder):
             return None
         candidates = [
@@ -80,7 +80,38 @@ class CharacterSpriteManager:
             if "estadistica" in f.lower() and f.lower().endswith(".png")
         ]
         if not candidates:
+            # Soporte para Dark World: extraer la cabeza auténtica del sprite original (Panie_dow1)
+            dow_candidates = [
+                f for f in os.listdir(folder)
+                if any(k in f.lower() for k in ("dow1", "adelante1", "adl1", "-ad1")) and f.lower().endswith(".png")
+            ]
+            if not dow_candidates:
+                dow_candidates = [f for f in os.listdir(folder) if "dow" in f.lower() and f.lower().endswith(".png")]
+            if dow_candidates:
+                path = os.path.join(folder, sorted(dow_candidates)[0])
+                try:
+                    sheet = pygame.image.load(path)
+                    if pygame.display.get_surface():
+                        sheet = sheet.convert_alpha()
+                    w, h = sheet.get_size()
+                    head_sub = sheet.subsurface(pygame.Rect(0, 0, w, min(h, 20))).copy()
+                    xs = [x for x in range(w) for y in range(head_sub.get_height()) if head_sub.get_at((x, y))[3] > 0]
+                    ys = [y for x in range(w) for y in range(head_sub.get_height()) if head_sub.get_at((x, y))[3] > 0]
+                    if xs and ys:
+                        min_x, max_x = min(xs), max(xs)
+                        min_y, max_y = min(ys), max(ys)
+                        fw = max_x - min_x + 1
+                        fh = max_y - min_y + 1
+                        sub = head_sub.subsurface(pygame.Rect(min_x, min_y, fw, fh)).copy()
+                        box_w = max(25, fw + 2)
+                        box_h = max(22, fh + 2)
+                        portrait_surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+                        portrait_surf.blit(sub, ((box_w - fw) // 2, box_h - fh))
+                        return portrait_surf
+                except Exception:
+                    pass
             return None
+
         path = os.path.join(folder, candidates[0])
         try:
             sheet = pygame.image.load(path)
@@ -97,8 +128,7 @@ class CharacterSpriteManager:
             fh = max_y - min_y + 1
             sub = sheet.subsurface(pygame.Rect(min_x, min_y, fw, fh)).copy()
 
-            # Mantener resolución 1:1 original intacta (23x19 / 23x20) en un lienzo ajustado (25x22)
-            # apoyando la base exactamente en el borde inferior (dest_y = box_h - fh) para que no flote
+            # Mantener resolución 1:1 original intacta del diseño de Paniel
             box_w = max(25, fw + 2)
             box_h = max(22, fh + 2)
             portrait_surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
@@ -150,7 +180,7 @@ class CharacterSpriteManager:
                         loaded_states[state_key] = base_dict
 
         if loaded_states:
-            # Usar FELIZ como base por defecto si algún estado faltara
+            # Preservar al 100% el diseño original auténtico de los sprites y retratos de Paniel
             default_frames = loaded_states.get("FELIZ") or next(iter(loaded_states.values()))
             self.frames = default_frames
             for state_key in ("FELIZ", "TRISTE", "TRAUMADO", "LOCO", "DARK_WORLD"):
@@ -526,7 +556,9 @@ class Player(WorldObject):
         return self._default_sprites
 
     def get_stat_portrait(self):
-        """Retorna el retrato de Estadisticas.png correspondiente al estado mental actual."""
+        """Retorna el retrato de Estadisticas.png correspondiente al estado mental actual (o Dark World)."""
+        if getattr(self, "in_dark_world", False) and "DARK_WORLD" in self.stat_portraits:
+            return self.stat_portraits["DARK_WORLD"]
         return self.stat_portraits.get(self.mental_state)
 
     @property
@@ -599,6 +631,14 @@ class Player(WorldObject):
             }
             self.equipment_bag.append(sturdy)
 
+    def add_equipment(self, gear_item):
+        """Añade una pieza de equipo a la bolsa sin equiparla automáticamente ni duplicarla."""
+        self.sync_equipment_bag()
+        if all(g["name"] != gear_item["name"] for g in self.equipment_bag):
+            self.equipment_bag.append(dict(gear_item))
+            return True
+        return False
+
     def get_slot_gear(self, slot_idx):
         if slot_idx == 0:
             return self.equipped_weapon
@@ -607,25 +647,41 @@ class Player(WorldObject):
         return self.equipped_armor_2
 
     def get_candidates_for_slot(self, slot_idx):
-        """Retorna las armas (slot_idx=0) o armaduras/reliquias (slot_idx=1,2) disponibles para equipar."""
+        """Retorna las armas (slot_idx=0) o armaduras/reliquias (slot_idx=1,2) disponibles para equipar.
+        Impide equipar el mismo objeto (incluido Sturdy Arm) en más de una ranura a la vez."""
         self.sync_equipment_bag()
         want = "WEAPON" if slot_idx == 0 else "ARMOR"
-        other_armor = self.equipped_armor_2 if slot_idx == 1 else (self.equipped_armor_1 if slot_idx == 2 else None)
+        other_equipped_names = {
+            self.get_slot_gear(i)["name"]
+            for i in range(3)
+            if i != slot_idx and self.get_slot_gear(i)
+        }
         candidates = []
         for g in self.equipment_bag:
             if g.get("slot") in (want, "BOTH"):
-                if other_armor and g["name"] == other_armor.get("name") and g["name"] != "Sturdy Arm":
+                if g["name"] in other_equipped_names:
                     continue
                 candidates.append(g)
         return candidates
 
     def equip_in_slot(self, slot_idx, gear_item):
-        """Equipa un arma o armadura en la ranura indicada (0: Arma, 1: Armadura 1, 2: Armadura 2) y actualiza ATK y DEF."""
+        """Equipa un arma o armadura en la ranura indicada (0: Arma, 1: Armadura 1, 2: Armadura 2) y actualiza ATK y DEF.
+        Retorna False si el objeto ya está equipado en otra ranura para evitar duplicados."""
         self.sync_equipment_bag()
         if all(g["name"] != gear_item["name"] for g in self.equipment_bag):
             self.equipment_bag.append(dict(gear_item))
 
+        # Bloquear cualquier intento de equipar la misma pieza en más de una ranura a la vez
+        for i in range(3):
+            if i != slot_idx:
+                other = self.get_slot_gear(i)
+                if other and other.get("name") == gear_item["name"]:
+                    return False
+
         old_gear = self.get_slot_gear(slot_idx)
+        if old_gear and old_gear.get("name") == gear_item["name"]:
+            return True
+
         old_atk = old_gear.get("atk_bonus", 0) if old_gear else 0
         old_def = old_gear.get("def_bonus", 0) if old_gear else 0
 
@@ -651,6 +707,7 @@ class Player(WorldObject):
         a1 = self.equipped_armor_1["name"] if self.equipped_armor_1 else "Ninguna"
         a2 = self.equipped_armor_2["name"] if self.equipped_armor_2 else ""
         self.armor = f"{a1} / {a2}" if a2 else a1
+        return True
 
     def modify_sanity(self, delta):
         """Aumenta o reduce la cordura asegurando límites entre 0 y 100."""

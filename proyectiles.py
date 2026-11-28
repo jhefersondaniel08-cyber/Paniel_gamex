@@ -1316,6 +1316,114 @@ class TutorialDashWallBullet(Bullet):
                 pygame.draw.line(surface, (255, 255, 255), (ar.left + 2, iy), (ar.right - 2, iy), 2)
 
 
+class DashWallBullet(Bullet):
+    """Muro energético de ancho/alto completo sin huecos para combates reales contra enemigos y jefes.
+    Se anuncia con una línea dorada parpadeante y debe atravesarse activamente usando DASH [X]."""
+    def __init__(
+        self,
+        arena_rect,
+        horizontal_sweep=True,
+        from_end=True,
+        speed=116.0,
+        warn_timer=0.42,
+        accent_color=(255, 200, 65),
+        aura_color=(185, 75, 245),
+    ):
+        self.arena_rect = arena_rect
+        self.horizontal_sweep = horizontal_sweep
+        self.from_end = from_end
+        if horizontal_sweep:
+            sx = float(arena_rect.right - 4) if from_end else float(arena_rect.left + 4)
+            sy = float(arena_rect.centery)
+            self.vel = -abs(speed) if from_end else abs(speed)
+        else:
+            sx = float(arena_rect.centerx)
+            sy = float(arena_rect.bottom - 4) if from_end else float(arena_rect.top + 4)
+            self.vel = -abs(speed) if from_end else abs(speed)
+        super().__init__(sx, sy, radius=5.0)
+        self.warn_timer = warn_timer
+        self.time = 0.0
+        self.accent_color = accent_color
+        self.aura_color = aura_color
+        self.requires_dash = True
+        self.hit_player = False
+        self.dash_verified = False
+
+    def update(self, dt, arena_rect, soul_pos=None):
+        self.time += dt
+        self.arena_rect = arena_rect
+        if self.warn_timer > 0:
+            self.warn_timer -= dt
+            return
+        if self.horizontal_sweep:
+            self.x += self.vel * dt
+            if self.x < arena_rect.left - 10 or self.x > arena_rect.right + 10:
+                self.alive = False
+        else:
+            self.y += self.vel * dt
+            if self.y < arena_rect.top - 10 or self.y > arena_rect.bottom + 10:
+                self.alive = False
+
+    def collides_with_soul(self, soul_center, soul_radius=3.0):
+        if self.warn_timer > 0:
+            return False
+        if self.horizontal_sweep:
+            return abs(self.x - soul_center[0]) <= (4.0 + soul_radius)
+        return abs(self.y - soul_center[1]) <= (4.0 + soul_radius)
+
+    def check_clean_dash_cross(self, soul_center, is_dashing_or_iframes):
+        """Retorna True una sola vez cuando el jugador atraviesa el muro usando DASH [X] sin recibir daño."""
+        if self.warn_timer > 0 or self.hit_player or self.dash_verified:
+            return False
+        dist = abs(self.x - soul_center[0]) if self.horizontal_sweep else abs(self.y - soul_center[1])
+        if is_dashing_or_iframes and dist <= 18.0:
+            self.dash_verified = True
+            return True
+        return False
+
+    def check_graze(self, soul_center, graze_radius=16.0):
+        if self.warn_timer > 0 or self.grazed:
+            return False
+        dist = abs(self.x - soul_center[0]) if self.horizontal_sweep else abs(self.y - soul_center[1])
+        if dist <= 12.0:
+            self.grazed = True
+            return True
+        return False
+
+    def draw(self, surface):
+        ar = self.arena_rect
+        flash = (int(self.time * 24) % 2 == 0)
+        if self.horizontal_sweep:
+            ix = int(self.x)
+            if self.warn_timer > 0:
+                col = (255, 232, 85) if flash else self.aura_color
+                pygame.draw.line(surface, col, (ix, ar.top + 2), (ix, ar.bottom - 2), 2)
+                # Pequeñas flechas doradas indicando hacia dónde barrerá el muro
+                dir_s = -1 if self.from_end else 1
+                for cy_a in range(ar.top + 24, ar.bottom - 16, 36):
+                    pts = [(ix + dir_s * 7, cy_a), (ix + dir_s * 1, cy_a - 4), (ix + dir_s * 1, cy_a + 4)]
+                    pygame.draw.polygon(surface, (255, 235, 95), pts)
+            else:
+                pygame.draw.rect(surface, self.aura_color, (ix - 6, ar.top + 2, 12, ar.height - 4))
+                pygame.draw.rect(surface, (0, 0, 0), (ix - 5, ar.top + 2, 10, ar.height - 4))
+                pygame.draw.rect(surface, self.accent_color, (ix - 3, ar.top + 2, 6, ar.height - 4))
+                pygame.draw.line(surface, (255, 255, 255), (ix, ar.top + 2), (ix, ar.bottom - 2), 2)
+        else:
+            iy = int(self.y)
+            if self.warn_timer > 0:
+                col = (255, 232, 85) if flash else self.aura_color
+                pygame.draw.line(surface, col, (ar.left + 2, iy), (ar.right - 2, iy), 2)
+                dir_s = -1 if self.from_end else 1
+                for cx_a in range(ar.left + 24, ar.right - 16, 36):
+                    pts = [(cx_a, iy + dir_s * 7), (cx_a - 4, iy + dir_s * 1), (cx_a + 4, iy + dir_s * 1)]
+                    pygame.draw.polygon(surface, (255, 235, 95), pts)
+            else:
+                pygame.draw.rect(surface, self.aura_color, (ar.left + 2, iy - 6, ar.width - 4, 12))
+                pygame.draw.rect(surface, (0, 0, 0), (ar.left + 2, iy - 5, ar.width - 4, 10))
+                pygame.draw.rect(surface, self.accent_color, (ar.left + 2, iy - 3, ar.width - 4, 6))
+                pygame.draw.line(surface, (255, 255, 255), (ar.left + 2, iy), (ar.right - 2, iy), 2)
+
+
 
 
 

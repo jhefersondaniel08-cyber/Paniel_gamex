@@ -199,39 +199,88 @@ class ChestObject(WorldObject):
 
 
 class RuinPillar(WorldObject):
-    """Pilar de ruinas con musgo."""
-    def __init__(self, x, y):
+    """Pilar gótico tallado de piedra antigua con musgo, grietas, hiedra y vela opcional."""
+    def __init__(self, x, y, style="gothic", has_candle=True):
         super().__init__(x, y, depth_y=y + 38)
         self.solid_rect = pygame.Rect(x + 4, y + 26, 16, 14)
+        self.style = style
+        self.has_candle = has_candle
+        self.flicker = random.uniform(0, 10)
+
+    def update(self, dt):
+        self.flicker += dt * 7.0
 
     def draw(self, surface, camera):
         cx, cy = camera.apply((self.x, self.y))
-        # Sombra
-        pygame.draw.ellipse(surface, (15, 20, 25, 90), (cx + 2, cy + 34, 20, 8))
-        # Base y cuerpo
-        pygame.draw.rect(surface, (120, 125, 135), (cx + 4, cy + 6, 16, 32), border_radius=2)
-        # Capitel y base
-        pygame.draw.rect(surface, (145, 150, 160), (cx + 2, cy + 4, 20, 6), border_radius=1)
-        pygame.draw.rect(surface, (145, 150, 160), (cx + 2, cy + 32, 20, 6), border_radius=1)
-        # Grietas y musgo
-        pygame.draw.rect(surf:=surface, (70, 130, 75), (cx + 6, cy + 16, 5, 8))
-        pygame.draw.line(surface, (80, 85, 95), (cx + 14, cy + 10), (cx + 12, cy + 24), 1)
+        # Sombra suave en el suelo
+        sh = pygame.Surface((26, 10), pygame.SRCALPHA)
+        pygame.draw.ellipse(sh, (6, 8, 14, 130), (0, 0, 26, 10))
+        surface.blit(sh, (cx - 1, cy + 33))
 
+        if self.style == "abyss":
+            stone_dark = (36, 26, 52)
+            stone_mid = (58, 42, 80)
+            stone_hi = (98, 68, 128)
+            moss_col = (140, 35, 95)
+            flame_outer = (235, 55, 115)
+        else:
+            stone_dark = (54, 58, 70)
+            stone_mid = (92, 98, 114)
+            stone_hi = (138, 146, 168)
+            moss_col = (54, 108, 66)
+            flame_outer = (255, 195, 75)
+
+        # Base escalonada
+        pygame.draw.rect(surface, stone_dark, (cx + 1, cy + 33, 22, 6), border_radius=2)
+        pygame.draw.rect(surface, stone_mid, (cx + 2, cy + 31, 20, 4), border_radius=1)
+        pygame.draw.line(surface, stone_hi, (cx + 3, cy + 31), (cx + 20, cy + 31), 1)
+
+        # Fuste estriado con volumen 3D (luz lunar desde la izquierda/arriba)
+        pygame.draw.rect(surface, stone_mid, (cx + 4, cy + 7, 16, 25), border_radius=1)
+        pygame.draw.rect(surface, stone_hi, (cx + 5, cy + 8, 3, 23))
+        pygame.draw.rect(surface, stone_dark, (cx + 16, cy + 8, 4, 23))
+        # Estrías verticales
+        pygame.draw.line(surface, stone_dark, (cx + 9, cy + 9), (cx + 9, cy + 30), 1)
+        pygame.draw.line(surface, stone_dark, (cx + 13, cy + 9), (cx + 13, cy + 30), 1)
+        pygame.draw.rect(surface, (24, 24, 34), (cx + 4, cy + 7, 16, 25), 1)
+
+        # Capitel gótico moldurado
+        pygame.draw.rect(surface, stone_mid, (cx + 1, cy + 3, 22, 5), border_radius=1)
+        pygame.draw.line(surface, stone_hi, (cx + 2, cy + 3), (cx + 21, cy + 3), 1)
+        pygame.draw.rect(surface, (24, 24, 34), (cx + 1, cy + 3, 22, 5), 1, border_radius=1)
+
+        # Grieta diagonal y musgo/hiedra trepadora
+        pygame.draw.line(surface, (30, 30, 40), (cx + 15, cy + 10), (cx + 11, cy + 19), 1)
+        pygame.draw.line(surface, (30, 30, 40), (cx + 11, cy + 19), (cx + 13, cy + 24), 1)
+        pygame.draw.ellipse(surface, moss_col, (cx + 4, cy + 16, 6, 9))
+        pygame.draw.ellipse(surface, (min(255, moss_col[0] + 24), min(255, moss_col[1] + 28), min(255, moss_col[2] + 20)), (cx + 5, cy + 17, 3, 5))
+        pygame.draw.circle(surface, moss_col, (cx + 15, cy + 28), 3)
+
+        # Pequeña vela votiva titilante sobre el capitel
+        if self.has_candle:
+            pygame.draw.rect(surface, (235, 228, 205), (cx + 10, cy - 2, 4, 5))
+            f_bob = int(math.sin(self.flicker) * 1)
+            glow = pygame.Surface((24, 24), pygame.SRCALPHA)
+            a_pulse = int(42 + math.sin(self.flicker * 1.4) * 14)
+            pygame.draw.circle(glow, (*flame_outer, a_pulse), (12, 12), 11)
+            pygame.draw.circle(glow, (255, 240, 170, a_pulse + 30), (12, 12), 5)
+            surface.blit(glow, (cx, cy - 15))
+            pygame.draw.circle(surface, flame_outer, (cx + 12, cy - 4 + f_bob), 2)
+            pygame.draw.circle(surface, (255, 250, 225), (cx + 12, cy - 4 + f_bob), 1)
 
 
 # ==========================================================
-# ==========================================================
-# OBJETOS AMBIENTALES DEL CEMENTERIO (Árboles góticos y Ánimas)
+# OBJETOS AMBIENTALES DEL CEMENTERIO (Árboles góticos, Faroles, Pebeteros y Ánimas)
 # ==========================================================
 class WillOWisp(WorldObject):
-    """Fuego fatuo / ánima etérea que flota suavemente por el cementerio."""
+    """Fuego fatuo / ánima etérea que flota suavemente por el cementerio con estela luminosa."""
     def __init__(self, x, y, color=(130, 235, 255)):
         super().__init__(x, y, depth_y=y + 12)
         self.base_x = x
         self.base_y = y
         self.color = color
         self.time = random.uniform(0, 10)
-        self.drift_speed = random.uniform(0.7, 1.3)
+        self.drift_speed = random.uniform(0.7, 1.25)
         self.orbit_rx = random.uniform(14, 28)
         self.orbit_ry = random.uniform(7, 14)
         self.particles = []
@@ -239,100 +288,286 @@ class WillOWisp(WorldObject):
     def update(self, dt):
         self.time += dt * self.drift_speed
         self.x = self.base_x + math.sin(self.time) * self.orbit_rx
-        self.y = self.base_y + math.cos(self.time * 1.3) * self.orbit_ry
+        self.y = self.base_y + math.cos(self.time * 1.35) * self.orbit_ry
         self.depth_y = self.y + 12
 
-        if random.random() < 0.28:
+        if random.random() < 0.36:
             self.particles.append({
-                "x": self.x,
-                "y": self.y,
-                "life": 0.55,
-                "max_life": 0.55,
-                "radius": random.uniform(1.0, 2.0)
+                "x": self.x + random.uniform(-2, 2),
+                "y": self.y + random.uniform(-2, 2),
+                "life": 0.65,
+                "max_life": 0.65,
+                "radius": random.uniform(1.0, 2.4)
             })
 
         for p in self.particles:
             p["life"] -= dt
-            p["y"] += dt * 3
+            p["y"] -= dt * 5.0
         self.particles = [p for p in self.particles if p["life"] > 0]
 
     def draw(self, surface, camera):
         cx, cy = camera.apply((self.x, self.y))
         for p in self.particles:
             px, py = camera.apply((p["x"], p["y"]))
-            alpha = int(180 * (p["life"] / p["max_life"]))
-            ps = pygame.Surface((4, 4), pygame.SRCALPHA)
-            pygame.draw.circle(ps, (*self.color, max(0, min(255, alpha))), (2, 2), int(p["radius"]))
-            surface.blit(ps, (px - 2, py - 2))
+            ratio = max(0.0, min(1.0, p["life"] / p["max_life"]))
+            alpha = int(175 * ratio)
+            r = max(1, int(p["radius"] * ratio + 0.5))
+            ps = pygame.Surface((r * 2 + 2, r * 2 + 2), pygame.SRCALPHA)
+            pygame.draw.circle(ps, (*self.color, alpha), (r + 1, r + 1), r)
+            surface.blit(ps, (px - r - 1, py - r - 1))
 
-        aura = pygame.Surface((22, 22), pygame.SRCALPHA)
-        pygame.draw.circle(aura, (*self.color, 40), (11, 11), 11)
-        pygame.draw.circle(aura, (*self.color, 95), (11, 11), 6)
-        pygame.draw.circle(aura, (255, 255, 255, 230), (11, 11), 2)
-        surface.blit(aura, (cx - 11, cy - 11))
+        pulse = 1.0 + 0.14 * math.sin(self.time * 4.5)
+        rad = int(14 * pulse)
+        aura = pygame.Surface((rad * 2 + 2, rad * 2 + 2), pygame.SRCALPHA)
+        c = rad + 1
+        pygame.draw.circle(aura, (*self.color, 26), (c, c), rad)
+        pygame.draw.circle(aura, (*self.color, 65), (c, c), max(2, int(rad * 0.62)))
+        pygame.draw.circle(aura, (*self.color, 130), (c, c), max(2, int(rad * 0.35)))
+        pygame.draw.circle(aura, (255, 255, 255, 240), (c, c), 2)
+        surface.blit(aura, (cx - c, cy - c))
 
 
 class TwistedTreeProp(WorldObject):
-    """Árbol gótico retorcido con ramas desnudas, musgo colgante y linterna opcional."""
-    def __init__(self, x, y, has_lantern=True):
-        super().__init__(x, y, depth_y=y + 60)
-        self.w = 56
-        self.h = 68
-        self.solid_rect = pygame.Rect(x + 18, y + 46, 20, 14)
+    """Árbol gótico monumental (sauce llorón / roble ancestral) con follaje nocturno, raíces, musgo y farol."""
+    def __init__(self, x, y, has_lantern=True, foliage_tint="moonlit"):
+        super().__init__(x, y, depth_y=y + 62)
+        self.w = 64
+        self.h = 74
+        self.solid_rect = pygame.Rect(x + 20, y + 48, 22, 14)
         self.has_lantern = has_lantern
+        self.foliage_tint = foliage_tint
         self.flicker = random.uniform(0, 10)
+        self.tree_surf = self._bake_tree_surface()
+
+    def _bake_tree_surface(self):
+        trunk = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+        if self.foliage_tint == "abyss":
+            bark_dark = (22, 14, 28)
+            bark_mid = (40, 26, 50)
+            bark_hi = (72, 46, 86)
+            leaf_dark = (28, 12, 42, 235)
+            leaf_mid = (56, 20, 74, 225)
+            leaf_hi = (108, 38, 118, 200)
+            moss_col = (145, 55, 125, 175)
+        else:
+            bark_dark = (24, 22, 28)
+            bark_mid = (44, 38, 46)
+            bark_hi = (76, 70, 84)
+            leaf_dark = (18, 30, 38, 238)
+            leaf_mid = (28, 50, 58, 228)
+            leaf_hi = (52, 88, 96, 200)
+            moss_col = (64, 104, 84, 185)
+
+        # Sombra orgánica amplia en la base
+        pygame.draw.ellipse(trunk, (6, 8, 12, 130), (8, 54, 48, 16))
+
+        # Raíces retorcidas agarrando la tierra
+        pygame.draw.polygon(trunk, bark_dark, [(12, 64), (22, 48), (42, 48), (52, 64), (44, 65), (36, 56), (28, 56), (20, 65)])
+        pygame.draw.polygon(trunk, bark_mid, [(16, 62), (24, 46), (39, 46), (48, 62), (41, 61), (35, 53), (27, 53), (22, 61)])
+        # Tronco principal nudoso con corteza iluminada por la luna
+        pygame.draw.polygon(trunk, bark_dark, [(23, 54), (25, 28), (38, 28), (41, 54)])
+        pygame.draw.polygon(trunk, bark_mid, [(25, 52), (27, 29), (36, 29), (38, 52)])
+        pygame.draw.line(trunk, bark_hi, (27, 50), (28, 30), 2)
+        pygame.draw.line(trunk, bark_dark, (33, 48), (32, 34), 1)
+        # Nudo hueco en el tronco
+        pygame.draw.ellipse(trunk, (12, 10, 16), (30, 40, 4, 6))
+
+        # Ramas principales góticas
+        branches = [
+            ((28, 32), (10, 18), 4), ((10, 18), (3, 12), 2), ((10, 18), (15, 7), 2),
+            ((35, 31), (52, 19), 4), ((52, 19), (60, 13), 2), ((52, 19), (46, 8), 2),
+            ((31, 30), (31, 10), 3), ((31, 10), (23, 4), 2), ((31, 10), (39, 4), 2),
+        ]
+        for p1, p2, w_b in branches:
+            pygame.draw.line(trunk, bark_dark, p1, p2, w_b + 2)
+            pygame.draw.line(trunk, bark_mid, p1, p2, w_b)
+
+        # Copa de sauce llorón / follaje nocturno en capas suaves con brillo lunar
+        canopy_back = [(14, 18, 12), (28, 12, 14), (42, 14, 13), (50, 20, 11), (22, 24, 11), (38, 23, 11)]
+        for lx, ly, lr in canopy_back:
+            pygame.draw.circle(trunk, leaf_dark, (lx, ly), lr)
+        canopy_mid = [(16, 15, 9), (28, 10, 11), (41, 12, 10), (49, 18, 8), (32, 18, 9)]
+        for lx, ly, lr in canopy_mid:
+            pygame.draw.circle(trunk, leaf_mid, (lx, ly), lr)
+        # Borde superior tocado por la luz de la luna
+        canopy_hi = [(20, 10, 5), (30, 7, 6), (41, 9, 5), (48, 14, 4)]
+        for lx, ly, lr in canopy_hi:
+            pygame.draw.circle(trunk, leaf_hi, (lx, ly), lr)
+
+        # Cortinas de hojas/musgo colgante estilo sauce llorón
+        for mx, my, mlen in [(8, 22, 12), (13, 24, 15), (19, 25, 11), (42, 24, 14), (48, 23, 12), (55, 21, 10)]:
+            pygame.draw.line(trunk, moss_col, (mx, my), (mx, my + mlen), 2)
+            pygame.draw.line(trunk, leaf_hi, (mx, my), (mx, my + mlen // 2), 1)
+
+        return trunk
 
     def update(self, dt):
-        self.flicker += dt * 6
+        self.flicker += dt * 5.2
 
     def draw(self, surface, camera):
         cx, cy = camera.apply((self.x, self.y))
-        # Sombra suave bajo el árbol
-        pygame.draw.ellipse(surface, (10, 12, 14, 110), (cx + 8, cy + 50, 40, 14))
+        surface.blit(self.tree_surf, (cx, cy))
 
-        # Tronco retorcido de roble/sauce oscuro
-        trunk = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
-        t_col = (40, 32, 36)
-        t_light = (60, 50, 54)
-        # Raíces
-        pygame.draw.polygon(trunk, t_col, [(14, 58), (22, 42), (32, 42), (42, 58)])
-        pygame.draw.polygon(trunk, t_col, [(20, 48), (25, 28), (34, 28), (38, 48)])
-        pygame.draw.polygon(trunk, t_light, [(23, 44), (26, 30), (28, 30), (25, 44)])
-
-        # Ramas góticas retorcidas
-        pygame.draw.line(trunk, t_col, (26, 30), (10, 14), 4)
-        pygame.draw.line(trunk, t_col, (10, 14), (2, 8), 2)
-        pygame.draw.line(trunk, t_col, (10, 14), (16, 4), 2)
-
-        pygame.draw.line(trunk, t_col, (30, 30), (46, 16), 4)
-        pygame.draw.line(trunk, t_col, (46, 16), (54, 10), 2)
-        pygame.draw.line(trunk, t_col, (46, 16), (40, 4), 2)
-
-        pygame.draw.line(trunk, t_col, (28, 28), (27, 8), 3)
-        pygame.draw.line(trunk, t_col, (27, 8), (22, 2), 2)
-        pygame.draw.line(trunk, t_col, (27, 8), (33, 2), 2)
-
-        # Musgo español colgante
-        for mx, my in [(12, 18), (14, 24), (42, 20), (44, 26), (26, 12)]:
-            pygame.draw.line(trunk, (45, 68, 48, 180), (mx, my), (mx, my + 6), 1)
-
-        surface.blit(trunk, (cx, cy))
-
-        # Farol de hierro forjado colgante con vela titilante
+        # Farol de hierro forjado colgante que se balancea suavemente
         if self.has_lantern:
-            lx = cx + 46
-            ly = cy + 22
-            # Cadena de suspensión
-            pygame.draw.line(surface, (65, 62, 70), (lx + 3, cy + 16), (lx + 3, ly), 1)
-            # Farol
-            pygame.draw.rect(surface, (42, 38, 45), (lx, ly, 7, 9), border_radius=1)
-            flicker_a = int(180 + math.sin(self.flicker) * 45)
-            pygame.draw.rect(surface, (255, 210, 80), (lx + 1, ly + 2, 5, 5))
-            # Resplandor cálido
-            glow = pygame.Surface((30, 30), pygame.SRCALPHA)
-            pygame.draw.circle(glow, (255, 195, 60, max(0, min(255, flicker_a // 4))), (15, 15), 15)
-            pygame.draw.circle(glow, (255, 230, 120, max(0, min(255, flicker_a // 2))), (15, 15), 7)
-            surface.blit(glow, (lx - 11, ly - 10))
+            sway = int(math.sin(self.flicker * 0.45) * 1.4)
+            lx = cx + 50 + sway
+            ly = cy + 25
+            # Cadena de hierro
+            pygame.draw.line(surface, (62, 60, 72), (cx + 52, cy + 19), (lx + 3, ly), 1)
+            # Tejadillo y estructura del farol
+            pygame.draw.polygon(surface, (34, 30, 42), [(lx - 1, ly + 1), (lx + 3, ly - 3), (lx + 8, ly + 1)])
+            pygame.draw.rect(surface, (36, 32, 46), (lx, ly + 1, 7, 9), border_radius=1)
+            flicker_a = int(185 + math.sin(self.flicker * 1.8) * 42)
+            if self.foliage_tint == "abyss":
+                f_col = (235, 85, 165)
+                g_col = (210, 50, 140)
+            else:
+                f_col = (255, 210, 95)
+                g_col = (255, 185, 65)
+            pygame.draw.rect(surface, f_col, (lx + 1, ly + 3, 5, 5))
+            pygame.draw.rect(surface, (255, 250, 220), (lx + 2, ly + 4, 3, 3))
+            # Halo cálido volumétrico
+            glow = pygame.Surface((42, 42), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (*g_col, max(0, min(255, flicker_a // 6))), (21, 21), 20)
+            pygame.draw.circle(glow, (*f_col, max(0, min(255, flicker_a // 3))), (21, 21), 11)
+            pygame.draw.circle(glow, (255, 245, 195, max(0, min(255, flicker_a // 2))), (21, 21), 5)
+            surface.blit(glow, (lx - 18, ly - 15))
+
+
+class GothicLampPost(WorldObject):
+    """Farol gótico victoriano de hierro forjado para iluminar las avenidas del cementerio."""
+    def __init__(self, x, y, flame_color=(255, 205, 95), facing="RIGHT"):
+        super().__init__(x, y, depth_y=y + 42)
+        self.solid_rect = pygame.Rect(x + 4, y + 34, 8, 8)
+        self.flame_color = flame_color
+        self.facing = facing
+        self.flicker = random.uniform(0, 10)
+
+    def update(self, dt):
+        self.flicker += dt * 6.0
+
+    def draw(self, surface, camera):
+        cx, cy = camera.apply((self.x, self.y))
+        # Sombra y halo en el suelo bajo el farol
+        g_pool = pygame.Surface((44, 20), pygame.SRCALPHA)
+        pulse = int(34 + math.sin(self.flicker) * 9)
+        pygame.draw.ellipse(g_pool, (*self.flame_color, pulse), (0, 0, 44, 20))
+        surface.blit(g_pool, (cx - 14, cy + 32))
+
+        # Pedestal de piedra y fuste de hierro forjado
+        pygame.draw.rect(surface, (52, 54, 66), (cx + 3, cy + 35, 10, 7), border_radius=1)
+        pygame.draw.rect(surface, (86, 90, 108), (cx + 4, cy + 35, 3, 6))
+        pygame.draw.rect(surface, (28, 28, 36), (cx + 3, cy + 35, 10, 7), 1, border_radius=1)
+
+        pygame.draw.rect(surface, (34, 34, 44), (cx + 6, cy + 8, 4, 28))
+        pygame.draw.line(surface, (76, 78, 96), (cx + 7, cy + 9), (cx + 7, cy + 34), 1)
+        # Voluta gótica decorativa
+        arm_dir = 1 if self.facing == "RIGHT" else -1
+        arm_end_x = cx + 8 + arm_dir * 8
+        pygame.draw.line(surface, (42, 42, 54), (cx + 8, cy + 10), (arm_end_x, cy + 7), 2)
+        pygame.draw.line(surface, (62, 64, 80), (cx + 8, cy + 14), (cx + 8 + arm_dir * 5, cy + 10), 1)
+        # Remate puntiagudo superior
+        pygame.draw.polygon(surface, (56, 58, 74), [(cx + 6, cy + 8), (cx + 8, cy + 2), (cx + 10, cy + 8)])
+
+        # Farol colgante
+        lx = arm_end_x - 3
+        ly = cy + 9
+        pygame.draw.polygon(surface, (34, 34, 44), [(lx - 1, ly + 1), (lx + 3, ly - 2), (lx + 7, ly + 1)])
+        pygame.draw.rect(surface, (30, 30, 40), (lx, ly + 1, 7, 9), border_radius=1)
+        pygame.draw.rect(surface, self.flame_color, (lx + 1, ly + 3, 5, 5))
+        pygame.draw.rect(surface, (255, 252, 230), (lx + 2, ly + 4, 3, 3))
+
+        # Resplandor luminoso
+        halo = pygame.Surface((46, 46), pygame.SRCALPHA)
+        ha = int(55 + math.sin(self.flicker * 1.4) * 14)
+        pygame.draw.circle(halo, (*self.flame_color, ha // 2), (23, 23), 22)
+        pygame.draw.circle(halo, (*self.flame_color, ha), (23, 23), 12)
+        pygame.draw.circle(halo, (255, 250, 220, ha + 35), (23, 23), 5)
+        surface.blit(halo, (lx - 19, ly - 17))
+
+
+class GothicBrazier(WorldObject):
+    """Pebetero gótico de piedra con fuego animado (carmesí, violeta miasma o dorado) y brasas ascendentes."""
+    def __init__(self, x, y, flame_color=(225, 55, 110), core_color=(255, 220, 145)):
+        super().__init__(x, y, depth_y=y + 24)
+        self.solid_rect = pygame.Rect(x + 2, y + 12, 16, 12)
+        self.flame_color = flame_color
+        self.core_color = core_color
+        self.time = random.uniform(0, 10)
+        self.embers = []
+
+    def update(self, dt):
+        self.time += dt * 8.0
+        if random.random() < 0.35:
+            self.embers.append({
+                "x": self.x + 10 + random.uniform(-4, 4),
+                "y": self.y + 4,
+                "vx": random.uniform(-6, 6),
+                "vy": random.uniform(-16, -28),
+                "life": random.uniform(0.4, 0.8),
+                "max_life": 0.8,
+            })
+        for e in self.embers:
+            e["x"] += e["vx"] * dt
+            e["y"] += e["vy"] * dt
+            e["life"] -= dt
+        self.embers = [e for e in self.embers if e["life"] > 0]
+
+    def draw(self, surface, camera):
+        cx, cy = camera.apply((self.x, self.y))
+        # Resplandor en el suelo
+        glow = pygame.Surface((46, 36), pygame.SRCALPHA)
+        ga = int(46 + math.sin(self.time) * 14)
+        pygame.draw.ellipse(glow, (*self.flame_color, ga), (2, 10, 42, 24))
+        pygame.draw.circle(glow, (*self.flame_color, ga + 18), (23, 14), 14)
+        surface.blit(glow, (cx - 13, cy - 6))
+
+        # Pedestal de piedra tallada
+        pygame.draw.polygon(surface, (44, 42, 56), [(cx + 2, cy + 24), (cx + 18, cy + 24), (cx + 15, cy + 13), (cx + 5, cy + 13)])
+        pygame.draw.polygon(surface, (76, 74, 92), [(cx + 1, cy + 8), (cx + 19, cy + 8), (cx + 16, cy + 14), (cx + 4, cy + 14)])
+        pygame.draw.polygon(surface, (22, 20, 30), [(cx + 1, cy + 8), (cx + 19, cy + 8), (cx + 16, cy + 14), (cx + 4, cy + 14)], 1)
+        pygame.draw.line(surface, (115, 112, 134), (cx + 3, cy + 9), (cx + 16, cy + 9), 1)
+
+        # Lenguas de fuego animadas
+        sway = int(math.sin(self.time * 1.1) * 2)
+        h_fl = int(11 + math.sin(self.time * 1.7) * 3)
+        outer = [(cx + 4, cy + 8), (cx + 10 + sway, cy + 8 - h_fl), (cx + 16, cy + 8)]
+        inner = [(cx + 7, cy + 8), (cx + 10 + sway // 2, cy + 8 - int(h_fl * 0.62)), (cx + 13, cy + 8)]
+        pygame.draw.polygon(surface, self.flame_color, outer)
+        pygame.draw.polygon(surface, self.core_color, inner)
+
+        # Brasas ascendentes
+        for e in self.embers:
+            ex, ey = camera.apply((e["x"], e["y"]))
+            a = int(220 * max(0.0, min(1.0, e["life"] / e["max_life"])))
+            es = pygame.Surface((3, 3), pygame.SRCALPHA)
+            es.fill((*self.core_color, a))
+            surface.blit(es, (ex - 1, ey - 1))
+
+
+class CemeteryCandleProp(WorldObject):
+    """Pequeño conjunto de velas votivas titilantes sobre el suelo o junto a lápidas."""
+    def __init__(self, x, y, flame_color=(255, 215, 95)):
+        super().__init__(x, y, depth_y=y + 10)
+        self.flame_color = flame_color
+        self.time = random.uniform(0, 10)
+
+    def update(self, dt):
+        self.time += dt * 7.5
+
+    def draw(self, surface, camera):
+        cx, cy = camera.apply((self.x, self.y))
+        glow = pygame.Surface((26, 22), pygame.SRCALPHA)
+        ga = int(42 + math.sin(self.time) * 12)
+        pygame.draw.ellipse(glow, (*self.flame_color, ga), (0, 2, 26, 18))
+        surface.blit(glow, (cx - 8, cy - 8))
+        for ox, oy, ch in [(0, 2, 6), (4, 0, 8), (8, 3, 5)]:
+            pygame.draw.rect(surface, (238, 232, 214), (cx + ox, cy + oy, 3, ch))
+            pygame.draw.rect(surface, (190, 182, 162), (cx + ox + 2, cy + oy, 1, ch))
+            fb = int(math.sin(self.time + ox) * 0.8)
+            pygame.draw.circle(surface, self.flame_color, (cx + ox + 1, cy + oy - 2 + fb), 2)
+            pygame.draw.circle(surface, (255, 252, 230), (cx + ox + 1, cy + oy - 2 + fb), 1)
 
 
 # OBJETOS INTERIORES INTERACTIVOS (Muebles, NPCs, Lore)
@@ -443,33 +678,30 @@ class DarkWorldVendorNPC(WorldObject):
             sound_fx.play_chest()
             cost = min(player.gold, 25)
             player.gold -= cost
-            sturdy_item = {
+            sturdy_gear = {
                 "name": "Sturdy Arm",
-                "heal": 0,
-                "sanity_heal": 0,
+                "slot": "BOTH",
                 "atk_bonus": 5,
                 "def_bonus": 10,
                 "desc": "¿Refuerzo robótico o mágico? de brazo. Incrementa +5 de Ataque y +10 de Defensa.",
             }
-            player.inventory.append(sturdy_item)
-            if not getattr(player, "sturdy_arm_equipped", False):
-                player.sturdy_arm_equipped = True
-                player.attack += 5
-                player.defense += 10
-                player.weapon = "Sturdy Arm"
-                player.armor = "Sturdy Arm (+10 DEF)"
+            if hasattr(player, "add_equipment"):
+                player.add_equipment(sturdy_gear)
+            elif hasattr(player, "equipment_bag"):
+                if all(g["name"] != sturdy_gear["name"] for g in player.equipment_bag):
+                    player.equipment_bag.append(sturdy_gear)
             dialogue_box.start_dialogue([
                 "* VENDEDOR DEL DARK WORLD: '¡Bienvenido a mi bazar abismal, viajero de la Luz!'",
                 "* 'Tengo una reliquia única para ti: [Sturdy Arm].'",
                 "* Descripción: '¿Refuerzo robótico o mágico? de brazo. Incrementa +5 de Ataque y +10 de Defensa.'",
-                f"* ¡Obtuviste y equipaste [Sturdy Arm]! (+5 ATK y +10 DEF -> ATK {player.effective_attack}, DEF {player.effective_defense})",
+                "* ¡Obtuviste [Sturdy Arm]! Puedes equiparlo desde [C] -> EQUIP en la ranura que prefieras.",
             ])
         else:
             sound_fx.play_select()
             dialogue_box.start_dialogue([
-                "* VENDEDOR DEL DARK WORLD: 'Ese [Sturdy Arm] te sienta de maravilla.'",
+                "* VENDEDOR DEL DARK WORLD: 'Ese [Sturdy Arm] es una reliquia única.'",
                 "* '¿Es tecnología cibernética o hechicería oscura? ¡Nadie en el Dark World lo sabe!'",
-                "* (Puedes ver su descripción en el menú [C] -> ITEM -> Sturdy Arm -> INFO).",
+                "* (Puedes equiparlo o revisar su descripción en [C] -> EQUIP).",
             ])
 
 

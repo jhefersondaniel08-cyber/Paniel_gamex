@@ -62,17 +62,17 @@ def main():
     # 1. Cargar sprites de Paniel en 4 direcciones a resolución 1:1 original intacta
     sprite_mgr = CharacterSpriteManager(base_dir)
 
-    # 2. Inicializar escenas (Zona de Tutorial inicial, Cementerio, Sección de la Iglesia, Abismo, Santuario, Iglesia, Sótano y Dark World)
+    # 2. Inicializar escenas (nombres cortos para que nunca se salgan del HUD ni de los carteles)
     interiors = {
-        "tutorial_grounds": InteriorScene("tutorial_grounds", "Santuario del Tutorial"),
-        "cemetery_entrance": InteriorScene("cemetery_entrance", "Entrada del Cementerio"),
+        "tutorial_grounds": InteriorScene("tutorial_grounds", "Tutorial"),
         "cemetery": InteriorScene("cemetery", "Cementerio"),
-        "cemetery_church_section": InteriorScene("cemetery_church_section", "Atrio de la Iglesia"),
-        "cemetery_depths": InteriorScene("cemetery_depths", "Abismo del Cementerio"),
-        "eclipse_sanctuary": InteriorScene("eclipse_sanctuary", "Santuario del Cristal Quebrado"),
-        "church": InteriorScene("church", "Iglesia del Cementerio"),
-        "church_basement": InteriorScene("church_basement", "Sótano de la Iglesia"),
+        "cemetery_church_section": InteriorScene("cemetery_church_section", "Atrio Iglesia"),
+        "cemetery_depths": InteriorScene("cemetery_depths", "Abismo"),
+        "eclipse_sanctuary": InteriorScene("eclipse_sanctuary", "Cristal Negro"),
+        "church": InteriorScene("church", "Iglesia"),
+        "church_basement": InteriorScene("church_basement", "Sótano"),
         "dark_world": InteriorScene("dark_world", "Dark World"),
+        "dark_world_throne": InteriorScene("dark_world_throne", "Trono Oscuro"),
     }
 
     dialogue_box = DialogueBox(font_dialogue, sound_fx)
@@ -83,16 +83,19 @@ def main():
     title_screen = DeltaruneTitleScreen(sound_fx, sprite_mgr)
     transition = SceneTransition()
 
-    # Estado del mundo (inicia en la introducción/título y luego aparece primero en el Santuario del Tutorial antes del Cementerio)
+    # Estado del mundo (inicia en la introducción ilustrada y despierta dentro del Cementerio)
     current_scene_type = "TITLE"  # TITLE, EXPLORATION o BATTLE
-    current_map_id = "tutorial_grounds"
+    current_map_id = "cemetery"
     battle_instance = None
     engaged_enemy = None
     battle_grace_timer = 0.0
+    wakeup_timer = 0.0
+    wakeup_duration = 2.6
+    wakeup_dialogue_pending = False
 
-    # Iniciar jugador en el extremo sur del Gran Santuario del Tutorial (800x900) antes de ir a la Entrada del Cementerio
-    player = Player(x=388, y=825, sprite_manager=sprite_mgr)
-    player.facing = "UP"
+    # Posición inicial dentro del Cementerio (junto a la reja sur cerrada con candado)
+    player = Player(x=388, y=496, sprite_manager=sprite_mgr)
+    player.facing = "DOWN"
 
     # Centrar la cámara de inmediato en Paniel
     active_map = interiors[current_map_id]
@@ -135,6 +138,11 @@ def main():
         OverworldEnemy(590, 275, "centinela_neon"),
         OverworldEnemy(300, 355, "bufon_caos"),
         OverworldEnemy(390, 175, "centinela_neon"),
+    ]
+
+    # Jefe Secreto del Dark World en la zona extra Trono Oscuro
+    dark_throne_enemies = [
+        OverworldEnemy(383, 240, "nyxar"),
     ]
 
     def spawn_dark_world_enemy():
@@ -192,7 +200,7 @@ def main():
         def on_battle_finish(victory, revived=False):
             nonlocal current_scene_type, current_map_id, battle_instance, engaged_enemy, battle_grace_timer
             tid = getattr(engaged_enemy, "template_id", "") if engaged_enemy is not None else ""
-            was_boss = tid in ("sepulturero", "arconte")
+            was_boss = tid in ("sepulturero", "arconte", "nyxar")
             if engaged_enemy in cemetery_enemies:
                 if victory:
                     cemetery_enemies.remove(engaged_enemy)
@@ -221,6 +229,13 @@ def main():
                 dark_world_enemies.remove(engaged_enemy)
             elif not victory and engaged_enemy in dark_world_enemies:
                 engaged_enemy.state = "WANDER"
+            if victory and engaged_enemy in dark_throne_enemies:
+                dark_throne_enemies.remove(engaged_enemy)
+            elif not victory and engaged_enemy in dark_throne_enemies:
+                if tid == "nyxar":
+                    engaged_enemy.x = 383.0
+                    engaged_enemy.y = 240.0
+                engaged_enemy.state = "WANDER"
             completed_all_tutorial = False
             if engaged_enemy in tutorial_enemies:
                 # Los entrenadores no pueden morir ni desaparecer del mapa: se quedan en su pedestal
@@ -236,31 +251,31 @@ def main():
 
             if revived:
                 current_scene_type = "EXPLORATION"
-                current_map_id = "cemetery_entrance"
-                player.x = 237.0
-                player.y = 390.0
+                current_map_id = "cemetery"
+                player.x = 388.0
+                player.y = 496.0
                 player.facing = "UP"
                 player.depth_y = player.y + player.h - 1
-                cem_ent = interiors["cemetery_entrance"]
-                camera.snap(player.x + player.w / 2.0, player.y + player.h / 2.0, cem_ent.pixel_w, cem_ent.pixel_h)
+                cem_map = interiors["cemetery"]
+                camera.snap(player.x + player.w / 2.0, player.y + player.h / 2.0, cem_map.pixel_w, cem_map.pixel_h)
                 dc = player.death_count
                 if dc == 1:
                     revival_lines = [
                         "* ...",
-                        "* Paniel abre los ojos jadeando en la hierba del cementerio.",
+                        "* Paniel abre los ojos jadeando sobre los adoquines del cementerio.",
                         "* '¿Qué... demonios fue eso? Sentí cómo mi alma se hacía trizas.'",
-                        "* 'Sigo vivo... Pero el frío no se va de mis huesos.'",
+                        "* 'Sigo atrapado aquí... Pero el frío no se va de mis huesos.'",
                     ]
                 elif dc <= 3:
                     revival_lines = [
-                        f"* Despiertas de nuevo ante la verja. Muerte número {dc}.",
+                        f"* Despiertas de nuevo junto a la reja cerrada. Muerte número {dc}.",
                         "* 'Recuerdo el golpe. Recuerdo el dolor con total nitidez.'",
                         "* Paniel aprieta los puños mientras un escalofrío recorre su espalda.",
                     ]
                 elif dc <= 6:
                     revival_lines = [
-                        f"* {dc} muertes. El suelo de la entrada del cementerio ya es como un viejo conocido.",
-                        "* 'Vuelvo una y otra vez... ¿Acaso este cementerio es una prisión eterna?'",
+                        f"* {dc} muertes. El suelo helado del cementerio ya es como un viejo conocido.",
+                        "* 'Vuelvo una y otra vez... ¿Acaso este camposanto es una prisión eterna?'",
                         "* (Tu mirada se torna más oscura y distante)",
                     ]
                 else:
@@ -273,31 +288,46 @@ def main():
             else:
                 current_scene_type = "EXPLORATION"
                 if completed_all_tutorial:
-                    execute_scene_switch("cemetery_entrance", (237, 390))
-                    player.facing = "UP"
-                    dialogue_box.start_dialogue([
-                        "* ¡¡HAS COMPLETADO LOS 3 ENTRENAMIENTOS DEL TUTORIAL!!",
-                        "* Dominaste el Guardado, los 5 botones (FIGHT, ACT/Magia, ITEM, SPARE, DEFEND), la Esquiva, el Parry [Z] y el Dash [X].",
-                        "* ¡Ya estás afuera de la Entrada del Cementerio para iniciar tu aventura!",
-                    ])
+                    start_cemetery_wakeup(from_tutorial=True)
                 elif was_boss and victory:
-                    if tid == "arconte":
+                    if tid == "nyxar":
+                        dialogue_box.start_dialogue([
+                            "* ¡¡La Fuente Oscura se aquieta y las alas de neón de Nyxar se disipan en luz!!",
+                            "* Nyxar inclina su corona quebrada reconociendo la fuerza de tu Alma Roja.",
+                            "* Paniel: 'Ese combate fue una locura... ¡Mira, el Cofre Real detrás del trono está libre!'",
+                        ])
+                    elif tid == "arconte":
                         dialogue_box.start_dialogue([
                             "* ¡¡El Cristal Negro se ha hecho añicos y el Fuego Oscuro se disipa!!",
-                            "* Vaelkor, Rey del Cristal Negro, se desvanece reconociendo tu poder.",
+                            "* Vaelkor se desvanece en fragmentos oscuros reconociendo tu poder.",
                             "* Paniel: 'Ni siquiera el núcleo del Eclipse pudo resistir mi BlackFlash.'",
                         ])
                     else:
                         dialogue_box.start_dialogue([
                             "* ¡El silencio regresa al camposanto!",
-                            "* Morvath el Sepulturero baja su guadaña y se desvanece en paz.",
-                            "* Paniel: 'Su vigilia ha terminado... El camino al Mausoleo ancestral ha quedado libre.'",
+                            "* Morvath baja su guadaña y se desvanece en paz.",
+                            "* Paniel: 'Su vigilia ha terminado... El camino al Mausoleo ha quedado libre.'",
                         ])
 
         battle_instance = DeltaruneBattle(player, enemy.template_id, sound_fx, font_hud, font_dialogue, on_battle_finish)
 
+    def start_cemetery_wakeup(from_tutorial=False):
+        nonlocal current_scene_type, current_map_id, wakeup_timer, wakeup_dialogue_pending, battle_grace_timer
+        current_scene_type = "EXPLORATION"
+        current_map_id = "cemetery"
+        player.x = 388.0
+        player.y = 496.0
+        player.facing = "DOWN"
+        player.depth_y = player.y + player.h - 1
+        cem_map = interiors["cemetery"]
+        camera.snap(player.x + player.w / 2.0, player.y + player.h / 2.0, cem_map.pixel_w, cem_map.pixel_h)
+        wakeup_timer = wakeup_duration
+        wakeup_dialogue_pending = True
+        battle_grace_timer = 4.5
+
     def execute_scene_switch(target_scene_id, target_spawn):
-        nonlocal current_map_id
+        nonlocal current_map_id, wakeup_timer, wakeup_dialogue_pending, battle_grace_timer
+        prev_map = current_map_id
         current_map_id = target_scene_id
         player.x = float(target_spawn[0])
         player.y = float(target_spawn[1])
@@ -305,6 +335,11 @@ def main():
         next_map = interiors[current_map_id]
         camera.snap(player.x + player.w / 2.0, player.y + player.h / 2.0, next_map.pixel_w, next_map.pixel_h)
         sound_fx.play_door()
+        if prev_map == "tutorial_grounds" and target_scene_id == "cemetery":
+            player.facing = "DOWN"
+            wakeup_timer = wakeup_duration
+            wakeup_dialogue_pending = True
+            battle_grace_timer = 4.5
 
     running = True
     while running:
@@ -326,12 +361,21 @@ def main():
                 else:
                     res = title_screen.handle_input(event)
                     if res == "START_GAME":
+                        start_cemetery_wakeup(from_tutorial=False)
+                    elif res == "START_TUTORIAL":
                         current_scene_type = "EXPLORATION"
+                        current_map_id = "tutorial_grounds"
+                        player.x = 388.0
+                        player.y = 825.0
+                        player.facing = "UP"
+                        player.depth_y = player.y + player.h - 1
+                        tut_map = interiors["tutorial_grounds"]
+                        camera.snap(player.x + player.w / 2.0, player.y + player.h / 2.0, tut_map.pixel_w, tut_map.pixel_h)
                         dialogue_box.start_dialogue([
-                            "* ¡Bienvenido al SANTUARIO DEL TUTORIAL de UnderBread!",
+                            "* ¡Bienvenido al TUTORIAL de UnderBread!",
                             "* 1) Junto a ti tienes la Estrella Amarilla de GUARDADO (cura tu HP al 100%, +25% Cordura y guarda tu progreso).",
-                            "* 2) Lee los carteles con [Z] para conocer FIGHT, ACT (Habilidades Mágicas como BlackFlash), ITEM, SPARE, DEFEND, la Tienda y los Jefes.",
-                            "* 3) Practica con los 3 Instructores (Esquiva, Parry [Z] con escudo verde, y Dash [X]) o cruza el Portal Norte para aparecer afuera del Cementerio."
+                            "* 2) Lee los carteles con [Z] para conocer FIGHT, ACT (BlackFlash), ITEM, SPARE, DEFEND y la Tienda.",
+                            "* 3) Practica con los 3 Instructores (Esquiva, Parry [Z] verde y Dash [X]) o cruza el Portal Norte para despertar en el Cementerio."
                         ])
                     elif res == "QUIT":
                         running = False
@@ -376,7 +420,7 @@ def main():
             battle_grace_timer = max(0.0, battle_grace_timer - dt)
 
         active_world = interiors[current_map_id]
-        player.in_dark_world = (current_map_id == "dark_world")
+        player.in_dark_world = current_map_id in ("dark_world", "dark_world_throne")
         area_name = active_world.name
         map_w, map_h = active_world.pixel_w, active_world.pixel_h
 
@@ -469,14 +513,31 @@ def main():
         dialogue_box.update(dt)
         transition.update(dt, execute_scene_switch, sound_fx=sound_fx)
 
+        # Cinemática inicial de despertar dentro del Cementerio
+        if wakeup_timer > 0.0:
+            wakeup_timer = max(0.0, wakeup_timer - dt)
+            if wakeup_timer <= 0.0 and wakeup_dialogue_pending:
+                wakeup_dialogue_pending = False
+                player.facing = "DOWN"
+                sound_fx.play_select()
+                dialogue_box.start_dialogue([
+                    "* ...Mmmh... ¿Qué hora es...?",
+                    "* Paniel abre los ojos tiritando sobre los adoquines fríos del cementerio.",
+                    "* Paniel: '¿Me quedé dormido aquí...? Solo vine al atardecer a dejar esas flores celestes.'",
+                    "* Paniel: 'Llevaba noches sin dormir por el cansancio... y esta niebla dulce me venció.'",
+                    "* (Miras atrás: la gran reja sur tiene cadena y candado por fuera.)",
+                    "* Paniel: '¡El guardia cerró conmigo adentro! Y esos encapuchados entre las tumbas...'",
+                    "* Paniel: 'Debo buscar otra salida... quizá por la Iglesia al Este o el Mausoleo al Norte.'"
+                ])
+
         # Movimiento del personaje y menús Undertale / Tienda Deltarune
         undertale_menu.update(dt)
         shop_menu.update(dt)
-        can_move = (not dialogue_box.active) and (not undertale_menu.active) and (not shop_menu.active) and (transition.state == "IDLE")
+        can_move = (wakeup_timer <= 0.0) and (not dialogue_box.active) and (not undertale_menu.active) and (not shop_menu.active) and (transition.state == "IDLE")
         player.handle_input_and_move(dt, active_world.solid_rects, disabled=not can_move)
 
-        # Actualizar enemigos sueltos en el Tutorial, Cementerio, Abismo, Santuario o Dark World
-        if current_map_id in ("tutorial_grounds", "cemetery", "cemetery_depths", "eclipse_sanctuary", "dark_world"):
+        # Actualizar enemigos sueltos en el Tutorial, Cementerio, Abismo, Santuario, Dark World o Trono Oscuro
+        if wakeup_timer <= 0.0 and current_map_id in ("tutorial_grounds", "cemetery", "cemetery_depths", "eclipse_sanctuary", "dark_world", "dark_world_throne"):
             if current_map_id == "tutorial_grounds":
                 active_enemies = tutorial_enemies
             elif current_map_id == "cemetery":
@@ -485,8 +546,10 @@ def main():
                 active_enemies = depths_enemies
             elif current_map_id == "eclipse_sanctuary":
                 active_enemies = sanctuary_enemies
-            else:
+            elif current_map_id == "dark_world":
                 active_enemies = dark_world_enemies
+            else:
+                active_enemies = dark_throne_enemies
             p_center = (player.x + player.w / 2, player.y + player.h / 2)
             lv_chase_bonus = max(0, player.lv - 1) * 4.5
             for enm in list(active_enemies):
@@ -502,7 +565,7 @@ def main():
 
         # Transición de pantallas
         if can_move:
-            # 0. Santuario del Tutorial -> Entrada del Cementerio (al cruzar el Portal Dorado del Norte tras superar los 3 Instructores)
+            # 0. Tutorial -> Interior del Cementerio (al cruzar el Portal Dorado del Norte tras superar los 3 Instructores)
             if current_map_id == "tutorial_grounds":
                 tut_scene = interiors["tutorial_grounds"]
                 if hasattr(tut_scene, "tutorial_exit_gate_rect") and player.hitbox.colliderect(tut_scene.tutorial_exit_gate_rect):
@@ -511,9 +574,9 @@ def main():
                         player.depth_y = player.y + player.h - 1
                         missing_names = []
                         for req_id, req_lbl in [
-                            ("maniqui_esquiva", "Instructor de Esquiva (4/4 barreras)"),
-                            ("maniqui_parry", "Instructor de Parry [Z] (4/4 esferas)"),
-                            ("maniqui_dash", "Instructor de Dash [X] (4/4 muros)"),
+                            ("maniqui_esquiva", "Guía Esquiva (4/4)"),
+                            ("maniqui_parry", "Guía Parry [Z] (4/4)"),
+                            ("maniqui_dash", "Guía Dash [X] (4/4)"),
                         ]:
                             if req_id not in completed_tutorial_trainers:
                                 missing_names.append(req_lbl)
@@ -524,41 +587,26 @@ def main():
                         ])
                     else:
                         transition.start(
-                            target_scene_id="cemetery_entrance",
-                            target_spawn=(237, 390),
-                            banner_text="Entrada del Cementerio",
+                            target_scene_id="cemetery",
+                            target_spawn=(388, 496),
+                            banner_text="Cementerio",
                         )
-            # 1. Entrada del Cementerio -> Interior del Cementerio
-            elif current_map_id == "cemetery_entrance":
-                cent_scene = interiors["cemetery_entrance"]
-                if hasattr(cent_scene, 'cemetery_gate_rect') and player.hitbox.colliderect(cent_scene.cemetery_gate_rect):
-                    transition.start(
-                        target_scene_id="cemetery",
-                        target_spawn=(400, 520),
-                        banner_text="Cementerio"
-                    )
-            # 2. Interior del Cementerio -> Entrada (sur), Abismo (norte) o Nueva Sección de la Iglesia (este)
+            # 1. Interior del Cementerio -> Abismo (norte) o Atrio de la Iglesia (este) [Reja sur cerrada con candado]
             elif current_map_id == "cemetery":
                 cem_scene = interiors["cemetery"]
-                if cem_scene.exit_rect and player.hitbox.colliderect(cem_scene.exit_rect) and player.facing == "DOWN":
-                    transition.start(
-                        target_scene_id="cemetery_entrance",
-                        target_spawn=(237, 390),
-                        banner_text="Entrada del Cementerio"
-                    )
-                elif hasattr(cem_scene, "depths_gate_rect") and player.hitbox.colliderect(cem_scene.depths_gate_rect):
+                if hasattr(cem_scene, "depths_gate_rect") and player.hitbox.colliderect(cem_scene.depths_gate_rect):
                     transition.start(
                         target_scene_id="cemetery_depths",
                         target_spawn=(400, 520),
-                        banner_text="Abismo del Cementerio"
+                        banner_text="Abismo"
                     )
                 elif hasattr(cem_scene, "church_section_gate_rect") and player.hitbox.colliderect(cem_scene.church_section_gate_rect):
                     transition.start(
                         target_scene_id="cemetery_church_section",
                         target_spawn=(44, 336),
-                        banner_text="Atrio de la Iglesia"
+                        banner_text="Atrio Iglesia"
                     )
-            # 2.5 Nueva Sección del Cementerio (Atrio de la Iglesia) -> Regreso al Cementerio (oeste) o Entrar a la Iglesia (norte)
+            # 2. Atrio de la Iglesia -> Regreso al Cementerio (oeste) o Entrar a la Iglesia (norte)
             elif current_map_id == "cemetery_church_section":
                 csec_scene = interiors["cemetery_church_section"]
                 if csec_scene.exit_rect and player.hitbox.colliderect(csec_scene.exit_rect) and player.facing == "LEFT":
@@ -571,9 +619,9 @@ def main():
                     transition.start(
                         target_scene_id="church",
                         target_spawn=(400, 520),
-                        banner_text="Iglesia del Cementerio"
+                        banner_text="Iglesia"
                     )
-            # 3. Abismo del Cementerio -> Regreso al Cementerio (sur) o Santuario del Cristal Quebrado (norte)
+            # 3. Abismo -> Regreso al Cementerio (sur) o Cristal Negro (norte)
             elif current_map_id == "cemetery_depths":
                 depths_scene = interiors["cemetery_depths"]
                 if depths_scene.exit_rect and player.hitbox.colliderect(depths_scene.exit_rect) and player.facing == "DOWN":
@@ -586,40 +634,40 @@ def main():
                     transition.start(
                         target_scene_id="eclipse_sanctuary",
                         target_spawn=(400, 520),
-                        banner_text="Santuario del Cristal Quebrado"
+                        banner_text="Cristal Negro"
                     )
-            # 4. Santuario del Cristal Quebrado -> Regreso al Abismo del Cementerio (salida al sur)
+            # 4. Cristal Negro -> Regreso al Abismo (salida al sur)
             elif current_map_id == "eclipse_sanctuary":
                 sanc_scene = interiors["eclipse_sanctuary"]
                 if sanc_scene.exit_rect and player.hitbox.colliderect(sanc_scene.exit_rect) and player.facing == "DOWN":
                     transition.start(
                         target_scene_id="cemetery_depths",
                         target_spawn=(400, 145),
-                        banner_text="Abismo del Cementerio"
+                        banner_text="Abismo"
                     )
-            # 5. Iglesia del Cementerio -> Salida al Atrio de la Iglesia (sur) o Sótano de la Iglesia (puerta norte)
+            # 5. Iglesia -> Salida al Atrio (sur) o Sótano (puerta norte)
             elif current_map_id == "church":
                 ch_scene = interiors["church"]
                 if ch_scene.exit_rect and player.hitbox.colliderect(ch_scene.exit_rect) and player.facing == "DOWN":
                     transition.start(
                         target_scene_id="cemetery_church_section",
                         target_spawn=(400, 272),
-                        banner_text="Atrio de la Iglesia",
+                        banner_text="Atrio Iglesia",
                     )
                 elif hasattr(ch_scene, "basement_gate_rect") and player.hitbox.colliderect(ch_scene.basement_gate_rect):
                     transition.start(
                         target_scene_id="church_basement",
                         target_spawn=(400, 520),
-                        banner_text="Sótano de la Iglesia",
+                        banner_text="Sótano",
                     )
-            # 6. Sótano de la Iglesia -> Regreso a la Iglesia (sur) o Caída al Dark World (portal norte)
+            # 6. Sótano -> Regreso a la Iglesia (sur) o Caída al Dark World (portal norte)
             elif current_map_id == "church_basement":
                 bs_scene = interiors["church_basement"]
                 if bs_scene.exit_rect and player.hitbox.colliderect(bs_scene.exit_rect) and player.facing == "DOWN":
                     transition.start(
                         target_scene_id="church",
                         target_spawn=(400, 145),
-                        banner_text="Iglesia de Hometown",
+                        banner_text="Iglesia",
                     )
                 elif hasattr(bs_scene, "dark_world_gate_rect") and player.hitbox.colliderect(bs_scene.dark_world_gate_rect):
                     transition.start(
@@ -627,19 +675,36 @@ def main():
                         target_spawn=(400, 520),
                         banner_text="★ DARK WORLD ★",
                     )
-            # 7. Dark World -> Regreso al Sótano de la Iglesia (portal sur)
+            # 7. Dark World -> Regreso al Sótano (portal sur) o Zona Extra Trono Oscuro (portal norte)
             elif current_map_id == "dark_world":
                 dw_scene = interiors["dark_world"]
                 if dw_scene.exit_rect and player.hitbox.colliderect(dw_scene.exit_rect) and player.facing == "DOWN":
                     transition.start(
                         target_scene_id="church_basement",
                         target_spawn=(400, 150),
-                        banner_text="Sótano de la Iglesia",
+                        banner_text="Sótano",
+                    )
+                elif hasattr(dw_scene, "throne_gate_rect") and player.hitbox.colliderect(dw_scene.throne_gate_rect):
+                    transition.start(
+                        target_scene_id="dark_world_throne",
+                        target_spawn=(388, 520),
+                        banner_text="Trono Oscuro",
+                    )
+            # 8. Trono Oscuro (Zona Extra del Dark World) -> Regreso al Dark World (portal sur)
+            elif current_map_id == "dark_world_throne":
+                dwt_scene = interiors["dark_world_throne"]
+                if dwt_scene.exit_rect and player.hitbox.colliderect(dwt_scene.exit_rect) and player.facing == "DOWN":
+                    transition.start(
+                        target_scene_id="dark_world",
+                        target_spawn=(388, 126),
+                        banner_text="★ DARK WORLD ★",
                     )
 
-        # Actualizar objetos animados (incluyendo fuegos fatuos y árboles con faroles)
+        # Actualizar objetos animados (incluyendo fuegos fatuos, faroles, pebeteros y atmósfera del cementerio)
         for obj in active_world.world_objects:
             obj.update(dt)
+        if hasattr(active_world, "update_ambient"):
+            active_world.update_ambient(dt)
 
         # Actualizar cámara siguiendo a Paniel
         player_cx = player.x + player.w / 2.0
@@ -666,22 +731,60 @@ def main():
             render_queue.extend(sanctuary_enemies)
         elif current_map_id == "dark_world":
             render_queue.extend(dark_world_enemies)
+        elif current_map_id == "dark_world_throne":
+            render_queue.extend(dark_throne_enemies)
         render_queue.append(player)
         render_queue.sort(key=lambda item: item.depth_y)
 
         for entity in render_queue:
             entity.draw(virtual_screen, camera)
 
+        # 2.5 Capa atmosférica animada (niebla, luciérnagas, pétalos nocturnos o Miasma de la Bruja)
+        if hasattr(active_world, "draw_overlay"):
+            active_world.draw_overlay(virtual_screen, camera)
+
+        # 2.8 Cinemática de despertar dentro del cementerio (Zzz -> sobresalto ! + apertura de párpados)
+        if wakeup_timer > 0.0:
+            prog = 1.0 - (wakeup_timer / wakeup_duration)
+            px_s, py_s = camera.apply((player.x + player.w / 2.0, player.y))
+            if prog < 0.56:
+                for zi, ch in enumerate(["z", "Z", "z"]):
+                    z_rise = ((prog * 2.6 + zi * 0.35) % 1.0) * 20.0
+                    zx = int(px_s + 8 + zi * 6)
+                    zy = int(py_s - 4 - z_rise)
+                    zs = font_hud_small.render(ch, False, (185, 225, 255))
+                    virtual_screen.blit(zs, (zx, zy))
+            elif prog < 0.90:
+                bx_b, by_b = int(px_s - 6), int(py_s - 22)
+                pygame.draw.rect(virtual_screen, (255, 255, 255), (bx_b, by_b, 12, 14), border_radius=3)
+                pygame.draw.rect(virtual_screen, (20, 20, 32), (bx_b, by_b, 12, 14), 1, border_radius=3)
+                exc = font_hud.render("!", False, (220, 40, 60))
+                virtual_screen.blit(exc, (bx_b + 3, by_b + 1))
+
+            # Parpadeo cinematográfico al abrir los ojos en el cementerio
+            if prog < 0.22:
+                open_ratio = (prog / 0.22) * 0.34
+            elif prog < 0.36:
+                open_ratio = 0.34 - ((prog - 0.22) / 0.14) * 0.22
+            elif prog < 0.88:
+                open_ratio = 0.12 + ((prog - 0.36) / 0.52) * 0.88
+            else:
+                open_ratio = 1.0
+            lid_h = int((VIRTUAL_HEIGHT / 2.0) * (1.0 - open_ratio))
+            if lid_h > 0:
+                pygame.draw.rect(virtual_screen, (4, 5, 12), (0, 0, VIRTUAL_WIDTH, lid_h))
+                pygame.draw.rect(virtual_screen, (4, 5, 12), (0, VIRTUAL_HEIGHT - lid_h, VIRTUAL_WIDTH, lid_h))
+
         # 3. Cuadro de diálogo
         dialogue_box.draw(virtual_screen, player=player)
 
         # 4. HUD de estado inferior
-        if not dialogue_box.active and not undertale_menu.active and not shop_menu.active:
+        if wakeup_timer <= 0.0 and not dialogue_box.active and not undertale_menu.active and not shop_menu.active:
             hud.draw(virtual_screen, player=player, is_running=player.is_running and player.is_moving, area_name=area_name, door_prompt=None)
 
         # 5. Medidor de Locura / HUD de salud mental en la esquina inferior derecha
         mental_hud.update(dt)
-        if not dialogue_box.active and not undertale_menu.active and not shop_menu.active:
+        if wakeup_timer <= 0.0 and not dialogue_box.active and not undertale_menu.active and not shop_menu.active:
             mental_hud.draw(virtual_screen, player)
 
         # 6. Menú estilo Undertale con tecla [C] o Menú de Tienda Dinámico estilo Deltarune
